@@ -1,3 +1,14 @@
+# Removing datasets
+
+body_models/smpl/
+dataset/HumanML3D/
+dataset/KIT-ML
+glove/
+kit/
+save/
+t2m/
+__MACOSX/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
