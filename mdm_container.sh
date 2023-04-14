@@ -8,4 +8,4 @@ do
 done
 echo "Running container MDM_container_$number on gpu $gpu and port $port";
 
-nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=$gpu --runtime=nvidia --userns=host --shm-size 64G -v /work/rodolfo.tonoli/motion-diffusion-model:/workspace/motion-diffusion-model/ -p $port --name MDM_container$number multimodal-research-group-mdm:latest /bin/bash
+nvidia-docker run --rm -it -e NVIDIA_VISIBLE_DEVICES=$gpu --runtime=nvidia --userns=host --shm-size 64G -v /work/rodolfo.tonoli/GestureDiffusion:/workspace/gesture-diffusion/ -p $port --name gestdiff_container$number multimodal-research-group-mdm:latest /bin/bash
