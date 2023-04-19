@@ -30,6 +30,8 @@ def get_collate_fn(name, hml_mode='train'):
         return t2m_eval_collate
     if name in ["humanml", "kit"]:
         return t2m_collate
+    elif name == "genea2022":
+        return None
     else:
         return all_collate
 

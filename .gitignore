@@ -10,6 +10,7 @@ kit/
 save/
 t2m/
 __MACOSX/
+.vscode/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

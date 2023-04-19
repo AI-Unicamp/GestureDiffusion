@@ -2,9 +2,11 @@ import torch
 from torch.utils import data
 import csv
 import scipy.io.wavfile as iowav
+import os
+import numpy as np
 
 class Genea2022(data.Dataset):
-    def __init__(self, split='train', datapath='./dataset/Genea/trn', window=200, fps=30):
+    def __init__(self, split='train', datapath='./dataset/Genea/trn', window=200, fps=30, num_frames=None):
         self.datapath = datapath
         self.window=window
         self.fps = fps
