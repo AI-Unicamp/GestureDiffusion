@@ -4,7 +4,6 @@ ENV PATH="/root/miniconda3/bin:${PATH}"
 ARG PATH="/root/miniconda3/bin:${PATH}"
 
 RUN rm /etc/apt/sources.list.d/cuda.list
-RUN rm /etc/apt/sources.list.d/nvidia-ml.list
 
 RUN apt-get update
 RUN apt-get install -y wget git nano ffmpeg
@@ -20,6 +19,7 @@ RUN conda --version
 WORKDIR /root
 COPY environment.yml /root
 
+RUN conda install tqdm -f
 RUN conda update conda
 RUN conda install pip
 RUN conda --version
