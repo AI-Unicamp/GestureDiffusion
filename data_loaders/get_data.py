@@ -18,6 +18,9 @@ def get_dataset_class(name):
     elif name == "kit":
         from data_loaders.humanml.data.dataset import KIT
         return KIT
+    elif name == "genea2022":
+        from data_loaders.gesture.data.dataset import Genea2022
+        return Genea2022
     else:
         raise ValueError(f'Unsupported dataset name [{name}]')
 

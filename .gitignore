@@ -4,6 +4,7 @@ body_models/smpl/
 dataset/HumanML3D/
 dataset/KIT-ML
 dataset/Genea
+dataset/Beat
 glove/
 kit/
 save/
