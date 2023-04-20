@@ -1,6 +1,6 @@
 from torch.utils.data import DataLoader
 from data_loaders.tensors import collate as all_collate
-from data_loaders.tensors import t2m_collate
+from data_loaders.tensors import t2m_collate, gg_collate
 
 def get_dataset_class(name):
     if name == "amass":
@@ -31,7 +31,7 @@ def get_collate_fn(name, hml_mode='train'):
     if name in ["humanml", "kit"]:
         return t2m_collate
     elif name == "genea2022":
-        return None
+        return gg_collate
     else:
         return all_collate
 

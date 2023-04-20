@@ -41,7 +41,9 @@ def get_model_args(args, data):
         njoints = 251
         nfeats = 1
     elif args.dataset == 'genea2022':
-        pass
+        data_rep = 'genea_vec'
+        njoints = 498
+        nfeats = 1
 
     return {'modeltype': '', 'njoints': njoints, 'nfeats': nfeats, 'num_actions': num_actions,
             'translation': True, 'pose_rep': 'rot6d', 'glob': True, 'glob_rot': True,

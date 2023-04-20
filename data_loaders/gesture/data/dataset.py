@@ -53,8 +53,8 @@ class Genea2022(data.Dataset):
         take_name = self.takes[file_idx][0]
         motion = self.__getmotion( file_idx, sample)
         audio = self.__getaudio(file_idx, sample)
-        text = self.__gettext(file_idx, sample)
-        return audio, text
+        n_text, text, tokens = self.__gettext(file_idx, sample)
+        return motion, text, tokens, self.window
         
     def __len__(self):
         return self.length
@@ -75,9 +75,16 @@ class Genea2022(data.Dataset):
         begin = self.search_time(file, sample*self.window)
         end = self.search_time(file, (sample+1) *self.window)
         text = [ word[-1] for word in file[begin: end] ]
+        tokens = self.__gentokens(text)
         #return file, ' '.join(text)
-        return ' '.join(text)
+        return len(text), ' '.join(text), tokens
     
+    def __gentokens(self, text):
+        tokens = [ word+'/OTHER' for word in text]
+        tokens = '_'.join(tokens)
+        tokens = 'sos/OTHER_' + tokens + '_eos/OTHER'
+        return tokens
+
     def search_time(self, text, frame):
         for i in range(len(text)):
             if frame <= text[i][0]:
