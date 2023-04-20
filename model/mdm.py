@@ -287,6 +287,8 @@ class OutputProcess(nn.Module):
             vel = output[1:]  # [seqlen-1, bs, d]
             vel = self.velFinal(vel)  # [seqlen-1, bs, 150]
             output = torch.cat((first_pose, vel), axis=0)  # [seqlen, bs, 150]
+        elif self.data_rep == 'genea_vec':
+            output = self.poseFinal(output)
         else:
             raise ValueError
         output = output.reshape(nframes, bs, self.njoints, self.nfeats)
