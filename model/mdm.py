@@ -258,6 +258,9 @@ class InputProcess(nn.Module):
             vel = x[1:]  # [seqlen-1, bs, 150]
             vel = self.velEmbedding(vel)  # [seqlen-1, bs, d]
             return torch.cat((first_pose, vel), axis=0)  # [seqlen, bs, d]
+        elif self.data_rep == 'genea_vec':
+            x = self.poseEmbedding(x)  # [seqlen, bs, d]
+            return x
         else:
             raise ValueError
 
