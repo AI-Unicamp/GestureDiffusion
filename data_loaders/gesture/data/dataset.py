@@ -6,9 +6,10 @@ import os
 import numpy as np
 
 class Genea2022(data.Dataset):
-    def __init__(self, split='train', datapath='./dataset/Genea/trn', window=200, fps=30, num_frames=None):
+    def __init__(self, split='train', datapath='./dataset/Genea/trn', step=30, window=200, fps=30, num_frames=None):
         self.datapath = datapath
         self.window=window
+        self.step = step
         self.fps = fps
         self.motionpath = os.path.join(datapath, 'motion_npy')
         self.audiopath = os.path.join(datapath, 'wav')
@@ -16,7 +17,7 @@ class Genea2022(data.Dataset):
         self.std = np.load(os.path.join(datapath, 'Std.npy'))
         self.mean = np.load(os.path.join(datapath, 'Mean.npy'))
         self.frames = np.load(os.path.join(datapath, 'frames.npy'))
-        self.samples_per_file = [int(np.floor(n/window)) for n in self.frames]
+        self.samples_per_file = [int(np.floor( (n-self.window) / self.step)) for n in self.frames]
         self.samples_cumulative = [np.sum(self.samples_per_file[:i+1]) for i in range(len(self.samples_per_file))]
 
         self.std = np.array([ item if item != 0 else 1 for item in self.std ])
@@ -36,9 +37,9 @@ class Genea2022(data.Dataset):
             assert os.path.isfile( t ), "Text file {} not found".format(t)
                 
         if split=='train':
-            self.begin, self.end = 0, int(len(self.takes)*0.7)
+            self.begin, self.end = 0, int(self.samples_cumulative[-1]*0.7)
         else:
-            self.begin, self.end =  int(len(self.takes)*0.7), len(self.takes)
+            self.begin, self.end =  int(self.samples_cumulative[-1]*0.7), self.samples_cumulative[-1]
         self.length = self.end - self.begin
         
     
@@ -57,27 +58,41 @@ class Genea2022(data.Dataset):
         n_text, text, tokens = self.__gettext(file_idx, sample)
         return motion, text, tokens, self.window
         
+    def __debug_getitem__(self, idx):
+        idx += self.begin
+        # find the file that the sample belongs two
+        file_idx = np.searchsorted(self.samples_cumulative, idx+1, side='left')
+        # find sample's index
+        if file_idx > 0:
+            sample = idx - self.samples_cumulative[file_idx-1]
+        else:
+            sample = idx
+        take_name = self.takes[file_idx][0]
+        motion = self.__getmotion( file_idx, sample)
+        audio = self.__getaudio(file_idx, sample)
+        n_text, text, tokens = self.__gettext(file_idx, sample)
+        return take_name, motion, audio, text
+        
     def __len__(self):
         return self.length
         
     def __getmotion(self, file, sample):
         motion_file = np.load(os.path.join(self.motionpath,self.takes[file][0]+'.npy'))
-        return (motion_file[sample*self.window: (sample+1)*self.window ,:] - self.mean) / self.std
+        return (motion_file[sample*self.step: sample*self.step + self.window ,:] - self.mean) / self.std
         
     def __getaudio(self, file, sample):
-        #audio_file = np.load(os.path.join(self.audiopath,self.takes[file]+'.wav'))
         sr, signal = iowav.read( os.path.join(self.audiopath,self.takes[file][0]+'.wav' ))
-        return signal[ int(sample*sr*self.window/self.fps) : int((sample+1)*sr*self.window/self.fps) ]
+        i = sample*sr*self.step/self.fps
+        return signal[ int(i) : int(i+self.window*sr/self.fps) ]
         
     def __gettext(self, file, sample):
         with open(os.path.join(self.textpath, self.takes[file][0]+'.tsv')) as tsv:
             reader = csv.reader(tsv, delimiter='\t')
             file = [ [float(word[0])*self.fps, float(word[1])*self.fps, word[2]] for word in reader]
-        begin = self.search_time(file, sample*self.window)
-        end = self.search_time(file, (sample+1) *self.window)
+        begin = self.search_time(file, sample*self.step)
+        end = self.search_time(file, sample*self.step + self.window)
         text = [ word[-1] for word in file[begin: end] ]
         tokens = self.__gentokens(text)
-        #return file, ' '.join(text)
         return len(text), ' '.join(text), tokens
     
     def __gentokens(self, text):
