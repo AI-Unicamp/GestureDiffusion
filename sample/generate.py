@@ -25,8 +25,18 @@ def main():
     out_path = args.output_dir
     name = os.path.basename(os.path.dirname(args.model_path))
     niter = os.path.basename(args.model_path).replace('model', '').replace('.pt', '')
-    max_frames = 196 if args.dataset in ['kit', 'humanml'] else 60
-    fps = 12.5 if args.dataset == 'kit' else 20
+    if args.dataset in ['kit', 'humanml']:
+        max_frames = 196 
+    elif args.dataset == 'genea2022':
+        max_frames = 200
+    else:
+        max_frames = 60
+    if args.dataset == 'kit':
+        fps = 12.5
+    elif args.dataset == 'genea2022':
+        fps = 30
+    else:
+        fps = 20
     n_frames = min(max_frames, int(args.motion_length*fps))
     is_using_data = not any([args.input_text, args.text_prompt, args.action_file, args.action_name])
     dist_util.setup_dist(args.device)
@@ -124,14 +134,35 @@ def main():
             const_noise=False,
         )
 
+        
+
         # Recover XYZ *positions* from HumanML3D vector representation
         if model.data_rep == 'hml_vec':
+            print('here')
             n_joints = 22 if sample.shape[1] == 263 else 21
+            print(sample.shape)
             sample = data.dataset.t2m_dataset.inv_transform(sample.cpu().permute(0, 2, 3, 1)).float()
+            print(sample.shape)
             sample = recover_from_ric(sample, n_joints)
+            print(sample.shape)
             sample = sample.view(-1, *sample.shape[2:]).permute(0, 2, 3, 1)
-
-        rot2xyz_pose_rep = 'xyz' if model.data_rep in ['xyz', 'hml_vec'] else model.data_rep
+            print(sample.shape)
+        elif model.data_rep == 'genea_vec':
+            n_joints = 83
+            print(sample.shape)
+            sample = data.dataset.inv_transform(sample.cpu().permute(0, 2, 3, 1)).float()
+            print(sample.shape)
+            idx_to_keep = np.asarray([ [i*6+3, i*6+4, i*6+5] for i in range(n_joints) ]).flatten()
+            sample = sample[..., idx_to_keep]
+            print(sample.shape)
+            sample = sample.view(sample.shape[:-1] + (-1, 3))
+            print(sample.shape)
+            sample = sample.view(-1, *sample.shape[2:]).permute(0, 2, 3, 1)
+            print(sample.shape)
+            print('HI')
+            print(sample)
+            
+        rot2xyz_pose_rep = 'xyz' if model.data_rep in ['xyz', 'hml_vec', 'genea_vec'] else model.data_rep
         rot2xyz_mask = None if rot2xyz_pose_rep == 'xyz' else model_kwargs['y']['mask'].reshape(args.batch_size, n_frames).bool()
         sample = model.rot2xyz(x=sample, mask=rot2xyz_mask, pose_rep=rot2xyz_pose_rep, glob=True, translation=True,
                                jointstype='smpl', vertstrans=True, betas=None, beta=0, glob_rot=None,
@@ -169,7 +200,12 @@ def main():
         fw.write('\n'.join([str(l) for l in all_lengths]))
 
     print(f"saving visualizations to [{out_path}]...")
-    skeleton = paramUtil.kit_kinematic_chain if args.dataset == 'kit' else paramUtil.t2m_kinematic_chain
+    if args.dataset == 'kit':
+        skeleton = paramUtil.kit_kinematic_chain
+    elif args.dataset == 'genea2022':
+        skeleton = paramUtil.genea2022_kinematic_chain
+    else:
+        skeleton = paramUtil.t2m_kinematic_chain
 
     sample_files = []
     num_samples_in_out_file = 7

@@ -56,6 +56,8 @@ t2m_kinematic_chain = [[0, 2, 5, 8, 11], [0, 1, 4, 7, 10], [0, 3, 6, 9, 12, 15],
 t2m_left_hand_chain = [[20, 22, 23, 24], [20, 34, 35, 36], [20, 25, 26, 27], [20, 31, 32, 33], [20, 28, 29, 30]]
 t2m_right_hand_chain = [[21, 43, 44, 45], [21, 46, 47, 48], [21, 40, 41, 42], [21, 37, 38, 39], [21, 49, 50, 51]]
 
+# [ [root, r_upleg, r_leg, r_foot_twist, r_foot], [root, spine1, spine2, spine3, neck], [spine3, r_shoulder, r_arm, r_forearm, r_wrist] ]
+genea2022_kinematic_chain = [ [1, 75, 76, 77, 78], [1, 79, 80, 81, 82], [1, 3, 4, 5, 6, 7], [6, 27, 29, 31, 33], [6, 50, 53, 55, 57] ]
 
 kit_tgt_skel_id = '03950'
 

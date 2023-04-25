@@ -206,6 +206,8 @@ def get_cond_mode(args):
         cond_mode = 'no_cond'
     elif args.dataset in ['kit', 'humanml']:
         cond_mode = 'text'
+    elif args.dataset == 'genea2022':
+        cond_mode = 'text'
     else:
         cond_mode = 'action'
     return cond_mode

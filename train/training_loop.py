@@ -149,7 +149,7 @@ class TrainLoop:
                 if self.step % self.save_interval == 0:
                     self.save()
                     self.model.eval()
-                    self.evaluate()
+                    #self.evaluate()
                     self.model.train()
 
                     # Run for a finite amount of time in integration tests.
@@ -161,7 +161,7 @@ class TrainLoop:
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
             self.save()
-            self.evaluate()
+            #self.evaluate()
 
     def evaluate(self):
         if not self.args.eval_during_training:

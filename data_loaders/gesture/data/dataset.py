@@ -18,7 +18,8 @@ class Genea2022(data.Dataset):
         self.frames = np.load(os.path.join(datapath, 'frames.npy'))
         self.samples_per_file = [int(np.floor(n/window)) for n in self.frames]
         self.samples_cumulative = [np.sum(self.samples_per_file[:i+1]) for i in range(len(self.samples_per_file))]
-        
+
+        self.std = np.array([ item if item != 0 else 1 for item in self.std ])
         
         with open(os.path.join(datapath, 'trn_2022_v1_metadata.csv')) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
@@ -53,8 +54,8 @@ class Genea2022(data.Dataset):
         take_name = self.takes[file_idx][0]
         motion = self.__getmotion( file_idx, sample)
         audio = self.__getaudio(file_idx, sample)
-        text = self.__gettext(file_idx, sample)
-        return audio, text
+        n_text, text, tokens = self.__gettext(file_idx, sample)
+        return motion, text, tokens, self.window
         
     def __len__(self):
         return self.length
@@ -75,14 +76,23 @@ class Genea2022(data.Dataset):
         begin = self.search_time(file, sample*self.window)
         end = self.search_time(file, (sample+1) *self.window)
         text = [ word[-1] for word in file[begin: end] ]
+        tokens = self.__gentokens(text)
         #return file, ' '.join(text)
-        return ' '.join(text)
+        return len(text), ' '.join(text), tokens
     
+    def __gentokens(self, text):
+        tokens = [ word+'/OTHER' for word in text]
+        tokens = '_'.join(tokens)
+        tokens = 'sos/OTHER_' + tokens + '_eos/OTHER'
+        return tokens
+
     def search_time(self, text, frame):
         for i in range(len(text)):
             if frame <= text[i][0]:
                 return i if (frame > text[i-1][1] or i==0) else i-1       
             
+    def inv_transform(self, data):
+        return data * self.std + self.mean
 
       #  movimento (200, 498) (200, 83 joints * (3 posições globais + 3 rotações locais))
       # texto " Yeah. I am from  "
