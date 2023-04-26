@@ -56,7 +56,8 @@ class Genea2022(data.Dataset):
         motion = self.__getmotion( file_idx, sample)
         audio = self.__getaudio(file_idx, sample)
         n_text, text, tokens = self.__gettext(file_idx, sample)
-        return motion, text, tokens, self.window
+        #return motion, text, tokens, self.window
+        return motion, text, self.window
         
     def __debug_getitem__(self, idx):
         idx += self.begin

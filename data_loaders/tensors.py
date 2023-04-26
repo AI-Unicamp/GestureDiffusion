@@ -66,14 +66,23 @@ def t2m_collate(batch):
     return collate(adapted_batch)
 
 # an adapter to our collate func
+#def gg_collate(batch):
+#    # batch.sort(key=lambda x: x[3], reverse=True)
+#    adapted_batch = [{
+#        'inp': torch.tensor(b[0].T).float().unsqueeze(1), # [seqlen, J] -> [J, 1, seqlen]
+#        'text': b[1], #b[0]['caption']
+#        'tokens': b[2],
+#        'lengths': b[3],
+#    } for b in batch]
+#    return collate(adapted_batch)
+
+# an adapter to our collate func
 def gg_collate(batch):
     # batch.sort(key=lambda x: x[3], reverse=True)
     adapted_batch = [{
         'inp': torch.tensor(b[0].T).float().unsqueeze(1), # [seqlen, J] -> [J, 1, seqlen]
         'text': b[1], #b[0]['caption']
-        'tokens': b[2],
-        'lengths': b[3],
+        'lengths': b[2],
     } for b in batch]
     return collate(adapted_batch)
-
 
