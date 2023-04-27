@@ -22,25 +22,9 @@ def get_model_args(args, data):
     clip_version = 'ViT-B/32'
     action_emb = 'tensor'
     cond_mode = get_cond_mode(args)
-    if hasattr(data.dataset, 'num_actions'):
-        num_actions = data.dataset.num_actions
-    else:
-        num_actions = 1
+    num_actions = 1
 
-    # SMPL defaults
-    data_rep = 'rot6d'
-    njoints = 25
-    nfeats = 6
-
-    if args.dataset == 'humanml':
-        data_rep = 'hml_vec'
-        njoints = 263
-        nfeats = 1
-    elif args.dataset == 'kit':
-        data_rep = 'hml_vec'
-        njoints = 251
-        nfeats = 1
-    elif args.dataset == 'genea2022':
+    if args.dataset == 'genea2022':
         data_rep = 'genea_vec'
         njoints = 498
         nfeats = 1
