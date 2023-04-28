@@ -38,6 +38,11 @@ def collate(batch):
     if 'text' in notnone_batches[0]:
         textbatch = [b['text'] for b in notnone_batches]
         cond['y'].update({'text': textbatch})
+    if 'mfcc' in notnone_batches[0]:
+        mfccbatch = [b['mfcc'] for b in notnone_batches]
+        mfccbatch = torch.cat(mfccbatch, dim=0)
+        cond['y'].update({'mfcc': mfccbatch})
+
     return motion, cond
 
 # an adapter to our collate func
@@ -47,6 +52,8 @@ def gg_collate(batch):
         'inp': torch.tensor(b[0].T).float().unsqueeze(1), # [seqlen, J] -> [J, 1, seqlen]
         'text': b[1], #b[0]['caption']
         'lengths': b[2],
+        'audio': b[3],
+        'mfcc': torch.tensor(b[4].T).float().unsqueeze(1).unsqueeze(0), # [seqlen, mfcc] -> [mfcc, 1, seqlen]
     } for b in batch]
     return collate(adapted_batch)
 

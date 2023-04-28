@@ -46,8 +46,11 @@ class MDM(nn.Module):
         self.cond_mode = kargs.get('cond_mode', 'no_cond')
         self.cond_mask_prob = kargs.get('cond_mask_prob', 0.)
         self.arch = arch
-        self.gru_emb_dim = self.latent_dim if self.arch == 'gru' else 0
-        self.input_process = InputProcess(self.data_rep, self.input_feats+self.gru_emb_dim, self.latent_dim)
+
+        self.mfcc_input = kargs.get('mfcc_input', False)
+        self.mfcc_dim = 26 if self.mfcc_input else 0
+        
+        self.input_process = InputProcess(self.data_rep, self.input_feats+self.mfcc_dim, self.latent_dim)
 
         self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, self.dropout)
         self.emb_trans_dec = emb_trans_dec
@@ -63,7 +66,7 @@ class MDM(nn.Module):
             self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
                                                          num_layers=self.num_layers)
         else:
-            raise ValueError('Please choose correct architecture [trans_enc, trans_dec, gru]')
+            raise ValueError('Please choose correct architecture [trans_enc]')
 
         self.embed_timestep = TimestepEmbedder(self.latent_dim, self.sequence_pos_encoder)
 
@@ -129,6 +132,7 @@ class MDM(nn.Module):
         timesteps: [batch_size] (int)
         """
         bs, njoints, nfeats, nframes = x.shape
+        #torch.Size([64, 498, 1, 200])
         emb = self.embed_timestep(timesteps)  # [1, bs, d]
 
         force_mask = y.get('uncond', False)
@@ -136,15 +140,17 @@ class MDM(nn.Module):
             enc_text = self.encode_text(y['text'])
             emb += self.embed_text(self.mask_cond(enc_text, force_mask=force_mask))
 
-        x = self.input_process(x) 
-        
+        #if self.use_audio:
+        if self.mfcc_input:
+            x = torch.cat((x, y['mfcc']), axis=1)
+
+        x = self.input_process(x) #torch.Size([2, 498, 1, 200])
+
         if self.arch == 'trans_enc':
             # adding the timestep embed
             xseq = torch.cat((emb, x), axis=0)  # [seqlen+1, bs, d]
             xseq = self.sequence_pos_encoder(xseq)  # [seqlen+1, bs, d]
             output = self.seqTransEncoder(xseq)[1:]  # , src_key_padding_mask=~maskseq)  # [seqlen, bs, d]
-            #if 'mfcc' in self.cond_mode:
-            #    output = output [..., :self.mfcc_dim]
 
         else:
             raise NotImplementedError

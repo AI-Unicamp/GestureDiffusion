@@ -4,6 +4,7 @@ import csv
 import scipy.io.wavfile as iowav
 import os
 import numpy as np
+from python_speech_features import mfcc
 
 class Genea2022(data.Dataset):
     def __init__(self, split='train', datapath='./dataset/Genea/trn', step=30, window=200, fps=30, num_frames=None):
@@ -16,6 +17,8 @@ class Genea2022(data.Dataset):
         self.textpath = os.path.join(datapath, 'tsv')
         self.std = np.load(os.path.join(datapath, 'Std.npy'))
         self.mean = np.load(os.path.join(datapath, 'Mean.npy'))
+        self.mfcc_std = np.load(os.path.join(datapath, 'mfccs_Std.npy'))
+        self.mfcc_mean = np.load(os.path.join(datapath, 'mfccs_Mean.npy'))
         self.frames = np.load(os.path.join(datapath, 'frames.npy'))
         self.samples_per_file = [int(np.floor( (n-self.window) / self.step)) for n in self.frames]
         self.samples_cumulative = [np.sum(self.samples_per_file[:i+1]) for i in range(len(self.samples_per_file))]
@@ -54,25 +57,27 @@ class Genea2022(data.Dataset):
             sample = idx
         take_name = self.takes[file_idx][0]
         motion = self.__getmotion( file_idx, sample)
-        audio = self.__getaudio(file_idx, sample)
+        
+        audio, mfcc = self.__getaudiofeats(file_idx, sample)
         n_text, text, tokens = self.__gettext(file_idx, sample)
         #return motion, text, tokens, self.window
-        return motion, text, self.window
+        raw_audio = self.__getaudio(file_idx, sample)
+        return motion, text, self.window, audio, mfcc
         
-    def __debug_getitem__(self, idx):
-        idx += self.begin
-        # find the file that the sample belongs two
-        file_idx = np.searchsorted(self.samples_cumulative, idx+1, side='left')
-        # find sample's index
-        if file_idx > 0:
-            sample = idx - self.samples_cumulative[file_idx-1]
-        else:
-            sample = idx
-        take_name = self.takes[file_idx][0]
-        motion = self.__getmotion( file_idx, sample)
-        audio = self.__getaudio(file_idx, sample)
-        n_text, text, tokens = self.__gettext(file_idx, sample)
-        return take_name, motion, audio, text
+    #def __debug_getitem__(self, idx):
+    #    idx += self.begin
+    #    # find the file that the sample belongs two
+    #    file_idx = np.searchsorted(self.samples_cumulative, idx+1, side='left')
+    #    # find sample's index
+    #    if file_idx > 0:
+    #        sample = idx - self.samples_cumulative[file_idx-1]
+    #    else:
+    #        sample = idx
+    #    take_name = self.takes[file_idx][0]
+    #    motion = self.__getmotion( file_idx, sample)
+    #    audio = self.__getaudio(file_idx, sample)
+    #    n_text, text, tokens = self.__gettext(file_idx, sample)
+    #    return take_name, motion, audio, text
         
     def __len__(self):
         return self.length
@@ -85,6 +90,16 @@ class Genea2022(data.Dataset):
         sr, signal = iowav.read( os.path.join(self.audiopath,self.takes[file][0]+'.wav' ))
         i = sample*sr*self.step/self.fps
         return signal[ int(i) : int(i+self.window*sr/self.fps) ]
+        
+    def __getaudiofeats(self, file, sample):
+        sr, signal = iowav.read( os.path.join(self.audiopath,self.takes[file][0]+'.wav' ))
+        if len(signal.shape) == 2:
+            signal = (signal[:, 0] + signal[:, 1]) / 2
+        i = sample*sr*self.step/self.fps
+        signal = signal[ int(i) : int(i+self.window*sr/self.fps) ]
+        mfcc_vectors = mfcc(signal, winlen=0.06, winstep= (1/self.fps), samplerate=sr, numcep=27, nfft=5000)
+        mfcc_vectors = (mfcc_vectors - self.mfcc_mean) / self.mfcc_std
+        return signal, mfcc_vectors
         
     def __gettext(self, file, sample):
         with open(os.path.join(self.textpath, self.takes[file][0]+'.tsv')) as tsv:
