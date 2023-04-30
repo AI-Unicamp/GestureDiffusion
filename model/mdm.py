@@ -5,8 +5,6 @@ import torch.nn.functional as F
 import clip
 from model.rotation2xyz import Rotation2xyz
 
-
-
 class MDM(nn.Module):
     def __init__(self, modeltype, njoints, nfeats, num_actions, translation, pose_rep, glob, glob_rot,
                  latent_dim=256, ff_size=1024, num_layers=8, num_heads=4, dropout=0.1,
@@ -168,7 +166,6 @@ class MDM(nn.Module):
         super().train(*args, **kwargs)
         self.rot2xyz.smpl_model.train(*args, **kwargs)
 
-
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
         super(PositionalEncoding, self).__init__()
@@ -188,7 +185,6 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:x.shape[0], :]
         return self.dropout(x)
 
-
 class TimestepEmbedder(nn.Module):
     def __init__(self, latent_dim, sequence_pos_encoder):
         super().__init__()
@@ -205,6 +201,33 @@ class TimestepEmbedder(nn.Module):
     def forward(self, timesteps):
         return self.time_embed(self.sequence_pos_encoder.pe[timesteps]).permute(1, 0, 2)
 
+class WavEncoder(nn.Module):
+    '''
+    Taken from https://github.com/ai4r/Gesture-Generation-from-Trimodal-Context/
+    '''
+    def __init__(self):
+        super().__init__()
+        self.feat_extractor = nn.Sequential(
+            nn.Conv1d(1, 16, 15, stride=5, padding=1600, dilation = 1),
+            nn.BatchNorm1d(16),
+            nn.LeakyReLU(0.3, inplace=True),
+            nn.Conv1d(16, 32, 15, stride=5, dilation = 4),
+            nn.BatchNorm1d(32),
+            nn.LeakyReLU(0.3, inplace=True),
+            nn.Conv1d(32, 64, 15, stride=5, dilation = 7),
+            nn.BatchNorm1d(64),
+            nn.LeakyReLU(0.3, inplace=True),
+            nn.Conv1d(64, 32, 15, stride=5, dilation = 13),
+        )
+
+    def forward(self, wav_data):            # [B, 147000]
+        wav_data = wav_data.unsqueeze(1)    # [B, 1, 147000]
+        out = self.feat_extractor(wav_data) # [B, 32, 200] 
+        return out.unsqueeze(2)             # [B, 32, 1, 200]
+    
+    def layer_output_size(self,l_in, padding, kernel_size, dilation, stride):
+        l_out = int(np.floor((l_in + 2*padding - dilation*(kernel_size-1) - 1)/stride + 1))
+        return l_out
 
 class InputProcess(nn.Module):
     def __init__(self, data_rep, input_feats, latent_dim):
@@ -225,7 +248,6 @@ class InputProcess(nn.Module):
             return x
         else:
             raise NotImplementedError
-
 
 class OutputProcess(nn.Module):
     def __init__(self, data_rep, input_feats, latent_dim, njoints, nfeats):
@@ -248,7 +270,6 @@ class OutputProcess(nn.Module):
         output = output.reshape(nframes, bs, self.njoints, self.nfeats)
         output = output.permute(1, 2, 3, 0)  # [bs, njoints, nfeats, nframes]
         return output
-
 
 class EmbedAction(nn.Module):
     def __init__(self, num_actions, latent_dim):
