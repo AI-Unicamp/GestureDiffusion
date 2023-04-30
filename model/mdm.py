@@ -12,62 +12,26 @@ class MDM(nn.Module):
                  arch='trans_enc', emb_trans_dec=False, clip_version=None, **kargs):
         super().__init__()
 
-        self.legacy = legacy
-        self.modeltype = modeltype
+        # General Configs        
+        self.dataset = dataset
+        self.pose_rep = pose_rep
         self.njoints = njoints
         self.nfeats = nfeats
-        self.num_actions = num_actions
-        self.data_rep = data_rep
-        self.dataset = dataset
+        self.input_feats = self.njoints * self.nfeats
+        self.latent_dim = latent_dim
+        self.cond_mode = kargs.get('cond_mode', 'no_cond')
 
-        self.pose_rep = pose_rep
+        # Unused?
         self.glob = glob
         self.glob_rot = glob_rot
         self.translation = translation
-
-        self.latent_dim = latent_dim
-
-        self.ff_size = ff_size
-        self.num_layers = num_layers
-        self.num_heads = num_heads
-        self.dropout = dropout
-
-        self.ablation = ablation
-        self.activation = activation
-        self.clip_dim = clip_dim
+        self.num_actions = num_actions
         self.action_emb = kargs.get('action_emb', None)
 
-        self.input_feats = self.njoints * self.nfeats
-
-        self.normalize_output = kargs.get('normalize_encoder_output', False)
-
-        self.cond_mode = kargs.get('cond_mode', 'no_cond')
+        # Text Encoder 
+        self.use_text = kargs.get('use_text', False)
         self.cond_mask_prob = kargs.get('cond_mask_prob', 0.)
-        self.arch = arch
-
-        self.mfcc_input = kargs.get('mfcc_input', False)
-        self.mfcc_dim = 26 if self.mfcc_input else 0
-        
-        self.input_process = InputProcess(self.data_rep, self.input_feats+self.mfcc_dim, self.latent_dim)
-
-        self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, self.dropout)
-        self.emb_trans_dec = emb_trans_dec
-
-        if self.arch == 'trans_enc':
-            print("TRANS_ENC init")
-            seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
-                                                              nhead=self.num_heads,
-                                                              dim_feedforward=self.ff_size,
-                                                              dropout=self.dropout,
-                                                              activation=self.activation)
-
-            self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
-                                                         num_layers=self.num_layers)
-        else:
-            raise ValueError('Please choose correct architecture [trans_enc]')
-
-        self.embed_timestep = TimestepEmbedder(self.latent_dim, self.sequence_pos_encoder)
-
+        self.clip_dim = clip_dim
         if self.cond_mode != 'no_cond':
             if 'text' in self.cond_mode:
                 self.embed_text = nn.Linear(self.clip_dim, self.latent_dim)
@@ -76,9 +40,50 @@ class MDM(nn.Module):
                 self.clip_version = clip_version
                 self.clip_model = self.load_and_freeze_clip(clip_version)
 
+        # Audio Encoder
+        self.use_audio = kargs.get('use_audio', False)
+        self.mfcc_input = kargs.get('mfcc_input', False)
+        self.use_wav_enc = kargs.get('use_wav_enc', False) 
+        self.mfcc_dim = 26 if self.mfcc_input else 0
+        self.wav_enc_dim = 32 if self.use_wav_enc else 0
+        self.augmented_input_feats = self.input_feats+self.mfcc_dim+self.wav_enc_dim
+        if use_audio:
+            print('Using Audio Features:')
+            if self.mfcc_input:
+                print('Selected Features: MFCCs')
+            if self.use_wav_enc:
+                print('Selected Features: WavEncoder Representations')
+                self.wav_encoder = WavEncoder()
+
+        # Input Linear
+        self.data_rep = data_rep
+        self.input_process = InputProcess(self.data_rep, self.augmented_input_feats, self.latent_dim)
+
+        # Denoiser Network
+        self.num_heads = num_heads
+        self.ff_size = ff_size
+        self.dropout = dropout
+        self.activation = activation
+        self.num_layers = num_layers
+        self.seqTransEncoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(
+                                                        d_model=self.latent_dim,
+                                                        nhead=self.num_heads,
+                                                        dim_feedforward=self.ff_size,
+                                                        dropout=self.dropout,
+                                                        activation=self.activation),
+                                                        num_layers=self.num_layers)
+
+        # Timestep Network
+        self.embed_timestep = TimestepEmbedder(self.latent_dim, self.sequence_pos_encoder)
+
+        # Sinusoidal Encoder
+        self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, self.dropout)
+
+        # Output Linear
         self.output_process = OutputProcess(self.data_rep, self.input_feats, self.latent_dim, self.njoints,
                                             self.nfeats)
 
+        # Unused?
         self.rot2xyz = Rotation2xyz(device='cpu', dataset=self.dataset)
 
     def parameters_wo_clip(self):
@@ -129,38 +134,50 @@ class MDM(nn.Module):
         x: [batch_size, njoints, nfeats, max_frames], denoted x_t in the paper
         timesteps: [batch_size] (int)
         """
-        bs, njoints, nfeats, nframes = x.shape
-        #torch.Size([64, 498, 1, 200])
-        emb = self.embed_timestep(timesteps)  # [1, bs, d]
+        # Get Sizes
+        bs, njoints, nfeats, nframes = x.shape # [BS, POSE_DIM, 1, CHUNK_LEN]
+        
+        # Get Timesteps Embeddings
+        emb = self.embed_timestep(timesteps)  # [1, BS, LAT_DIM]
 
+        # Text Conditioning
         force_mask = y.get('uncond', False)
         if 'text' in self.cond_mode:
             enc_text = self.encode_text(y['text'])
-            emb += self.embed_text(self.mask_cond(enc_text, force_mask=force_mask))
+            if self.use_text:
+                emb += self.embed_text(self.mask_cond(enc_text, force_mask=force_mask)) # [1, BS, LAT_DIM]
 
-        #if self.use_audio:
-        if self.mfcc_input:
-            x = torch.cat((x, y['mfcc']), axis=1)
+        # Audio Conditioning
+        if self.use_audio:
+            if self.mfcc_input:
+                mfccs = y['mfcc']                               # [BS, MFCC_DIM, 1, CHUNK_LEN]
+                x = torch.cat((x, mfcss), axis=1)               # [BS, POSE_DIM + MFCC_DIM, 1, CHUNK_LEN]
+            if self.use_wav_enc:
+                audio_representation = self.wav_encoder(y['audio']) # [BS, WAV_ENC_DIM, 1, CHUNK_LEN]
+                x = torch.cat((x, audio_representation), axis=1)    # [BS, POSE_DIM + WAV_ENC_DIM, 1, CHUNK_LEN]
 
-        x = self.input_process(x) #torch.Size([2, 498, 1, 200])
+        # Linear Input Feature Pass
+        x = self.input_process(x)               # [CHUNK_LEN, BS, LAT_DIM]
 
-        if self.arch == 'trans_enc':
-            # adding the timestep embed
-            xseq = torch.cat((emb, x), axis=0)  # [seqlen+1, bs, d]
-            xseq = self.sequence_pos_encoder(xseq)  # [seqlen+1, bs, d]
-            output = self.seqTransEncoder(xseq)[1:]  # , src_key_padding_mask=~maskseq)  # [seqlen, bs, d]
+        # Cat 0th-conditioning-token
+        xseq = torch.cat((emb, x), axis=0)      # [CHUNK_LEN+1, BS, LAT_DIM]  
+        
+        # Apply Positional Sinusoidal Embeddings
+        xseq = self.sequence_pos_encoder(xseq)  # [CHUNK_LEN+1, BS, LAT_DIM]  
 
-        else:
-            raise NotImplementedError
+        # Transformer Encoder Pass
+        output = self.seqTransEncoder(xseq)     # [CHUNK_LEN+1, BS, LAT_DIM]
 
-        output = self.output_process(output)  # [bs, njoints, nfeats, nframes]
+        # Ignore First Token
+        output = output[1:]                     # [CHUNK_LEN, BS, LAT_DIM]
+
+        # Linear Output Feature Pass
+        output = self.output_process(output)    # [BS, POSE_DIM, 1, CHUNK_LEN]
         return output
-
 
     def _apply(self, fn):
         super()._apply(fn)
         self.rot2xyz.smpl_model._apply(fn)
-
 
     def train(self, *args, **kwargs):
         super().train(*args, **kwargs)
@@ -264,11 +281,11 @@ class OutputProcess(nn.Module):
     def forward(self, output):
         nframes, bs, d = output.shape
         if self.data_rep == 'genea_vec':
-            output = self.poseFinal(output)
+            output = self.poseFinal(output) # [CHUNK_LEN, BS, POSE_DIM]
         else:
             raise NotImplementedError
-        output = output.reshape(nframes, bs, self.njoints, self.nfeats)
-        output = output.permute(1, 2, 3, 0)  # [bs, njoints, nfeats, nframes]
+        output = output.reshape(nframes, bs, self.njoints, self.nfeats) # [CHUNK_LEN, BS, POSE_DIM, 1]
+        output = output.permute(1, 2, 3, 0)  
         return output
 
 class EmbedAction(nn.Module):
