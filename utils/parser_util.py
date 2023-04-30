@@ -94,6 +94,7 @@ def add_model_options(parser):
                        help="Model is trained unconditionally. That is, it is constrained by neither text nor action. "
                             "Currently tested on HumanAct12 only.")
 
+    group.add_argument("--use_text", default=False, type=bool, help="Unlock text for any usage.")
     group.add_argument("--use_audio", default=False, type=bool, help="Unlock audio for any usage.")
     group.add_argument("--mfcc_input", default=False, type=bool, help="Agregate audio mfcc features in the motion.")
     group.add_argument("--use_wav_enc", default=False, type=bool, help="Agregate audio representation extracted w/ conv encoder in the motion.")
