@@ -24,9 +24,11 @@ RUN conda update conda
 RUN conda install pip
 RUN conda --version
 RUN conda env create -f environment.yml
-RUN pip install blobfile
-RUN pip install PyYAML
 
 SHELL ["conda", "run", "-n", "mdm", "/bin/bash", "-c"]
 RUN python -m spacy download en_core_web_sm
 RUN pip install git+https://github.com/openai/CLIP.git
+RUN pip install blobfile
+RUN pip install PyYAML
+RUN pip install librosa
+RUN pip install python_speech_features
