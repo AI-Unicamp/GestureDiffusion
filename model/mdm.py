@@ -73,11 +73,11 @@ class MDM(nn.Module):
                                                         activation=self.activation),
                                                         num_layers=self.num_layers)
 
-        # Timestep Network
-        self.embed_timestep = TimestepEmbedder(self.latent_dim, self.sequence_pos_encoder)
-
         # Sinusoidal Encoder
         self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, self.dropout)
+        
+        # Timestep Network
+        self.embed_timestep = TimestepEmbedder(self.latent_dim, self.sequence_pos_encoder)
 
         # Output Linear
         self.output_process = OutputProcess(self.data_rep, self.input_feats, self.latent_dim, self.njoints,
