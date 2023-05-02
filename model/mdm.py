@@ -151,7 +151,7 @@ class MDM(nn.Module):
         if self.use_audio:
             if self.mfcc_input:
                 mfccs = y['mfcc']                               # [BS, MFCC_DIM, 1, CHUNK_LEN]
-                x = torch.cat((x, mfcss), axis=1)               # [BS, POSE_DIM + MFCC_DIM, 1, CHUNK_LEN]
+                x = torch.cat((x, mfccs), axis=1)               # [BS, POSE_DIM + MFCC_DIM, 1, CHUNK_LEN]
             if self.use_wav_enc:
                 audio_representation = self.wav_encoder(y['audio']) # [BS, WAV_ENC_DIM, 1, CHUNK_LEN]
                 x = torch.cat((x, audio_representation), axis=1)    # [BS, POSE_DIM + WAV_ENC_DIM, 1, CHUNK_LEN]
