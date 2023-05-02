@@ -47,7 +47,7 @@ class MDM(nn.Module):
         self.mfcc_dim = 26 if self.mfcc_input else 0
         self.wav_enc_dim = 32 if self.use_wav_enc else 0
         self.augmented_input_feats = self.input_feats+self.mfcc_dim+self.wav_enc_dim
-        if use_audio:
+        if self.use_audio:
             print('Using Audio Features:')
             if self.mfcc_input:
                 print('Selected Features: MFCCs')
