@@ -12,9 +12,9 @@ class Genea2022(data.Dataset):
         self.window=window
         self.step = step
         self.fps = fps
-        self.sr = sr
+        self.sr = 22050
         self.motionpath = os.path.join(datapath, 'motion_npy')
-        self.audiopath = os.path.join(datapath, 'wav')
+        self.audiopath = os.path.join(datapath, 'audio_npy')
         self.textpath = os.path.join(datapath, 'tsv')
         self.std = np.load(os.path.join(datapath, 'Std.npy'))
         self.mean = np.load(os.path.join(datapath, 'Mean.npy'))
@@ -33,7 +33,7 @@ class Genea2022(data.Dataset):
         for take in self.takes:
             name = take[0]
             m = os.path.join(self.motionpath, name+'.npy')
-            a = os.path.join(self.audiopath, name+'.wav')
+            a = os.path.join(self.audiopath, name+'.npy')
             t = os.path.join(self.textpath, name+'.tsv')
             assert os.path.isfile( m ), "Motion file {} not found".format(m)
             assert os.path.isfile( a ), "Audio file {} not found".format(a)
@@ -70,14 +70,15 @@ class Genea2022(data.Dataset):
 
     def __getaudiofeats(self, file, sample):
         # Load Audio
-        signal, sr = librosa.load(os.path.join(self.audiopath,self.takes[file][0]+'.wav'), mono=True, sr=self.sr)
+        #signal, sr = librosa.load(os.path.join(self.audiopath,self.takes[file][0]+'.wav'), mono=True, sr=self.sr)
+        signal = np.load(os.path.join(self.audiopath,self.takes[file][0]+'.npy'))
         
         # Chunk
-        i = sample*sr*self.step/self.fps
-        signal = signal[ int(i) : int(i+self.window*sr/self.fps) ]
+        i = sample*self.sr*self.step/self.fps
+        signal = signal[ int(i) : int(i+self.window*self.sr/self.fps) ]
 
         # MFCCs
-        mfcc_vectors = mfcc(signal, winlen=0.06, winstep= (1/self.fps), samplerate=sr, numcep=27, nfft=5000)
+        mfcc_vectors = mfcc(signal, winlen=0.06, winstep= (1/self.fps), samplerate=self.sr, numcep=27, nfft=5000)
 
         # Normalize
         mfcc_vectors = (mfcc_vectors - self.mfcc_mean) / self.mfcc_std
@@ -106,3 +107,11 @@ class Genea2022(data.Dataset):
     
     def inv_transform(self, data):
         return data * self.std + self.mean
+
+
+    def gettime(self):
+        import time
+        start = time.time()
+        for i in range(200):
+            sample = self.__getitem__(i)
+        print(time.time()-start)

@@ -5,6 +5,7 @@ dataset/HumanML3D/
 dataset/KIT-ML
 dataset/Genea
 dataset/Beat
+dataset/Genea2023
 glove/
 kit/
 save/
