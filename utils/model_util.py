@@ -24,7 +24,7 @@ def get_model_args(args, data):
     cond_mode = get_cond_mode(args)
     num_actions = 1
 
-    if args.dataset == 'genea2022':
+    if args.dataset in ['genea2022', 'genea2023']:
         data_rep = 'genea_vec'
         njoints = 498
         nfeats = 1

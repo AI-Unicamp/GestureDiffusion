@@ -25,19 +25,13 @@ def main():
     out_path = args.output_dir
     name = os.path.basename(os.path.dirname(args.model_path))
     niter = os.path.basename(args.model_path).replace('model', '').replace('.pt', '')
-    if args.dataset in ['kit', 'humanml']:
-        max_frames = 196 
-    elif args.dataset == 'genea2022':
+    if args.dataset == 'genea2022':
         max_frames = 200
-    else:
-        max_frames = 60
-    if args.dataset == 'kit':
-        fps = 12.5
-    elif args.dataset == 'genea2022':
         fps = 30
     else:
-        fps = 20
-    n_frames = min(max_frames, int(args.motion_length*fps))
+        raise NotImplementedError
+    #n_frames = min(max_frames, int(args.motion_length*fps))
+    n_frames = max_frames
     is_using_data = not any([args.input_text, args.text_prompt, args.action_file, args.action_name])
     dist_util.setup_dist(args.device)
     if out_path == '':
@@ -95,6 +89,8 @@ def main():
     if is_using_data:
         iterator = iter(data)
         _, model_kwargs = next(iterator)
+        model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()}
+
     else:
         collate_args = [{'inp': torch.zeros(n_frames), 'tokens': None, 'lengths': n_frames}] * args.num_samples
         is_t2m = any([args.input_text, args.text_prompt])
