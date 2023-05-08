@@ -31,7 +31,7 @@ class Genea2023(data.Dataset):
         self.mean = np.load(os.path.join(datapath, 'trn/main-agent/rotpos_Mean.npy'))
         self.mfcc_std = np.load(os.path.join(datapath, 'trn/main-agent/mfccs_Std.npy'))
         self.mfcc_mean = np.load(os.path.join(datapath, 'trn/main-agent/mfccs_Mean.npy'))
-        self.frames = np.load(os.path.join(datapath, 'trn/main-agent/rotpos_frames.npy'))
+        self.frames = np.load(os.path.join(srcpath, 'rotpos_frames.npy'))
         self.std = np.array([ item if item != 0 else 1 for item in self.std ])
 
         self.motionpath = os.path.join(srcpath, 'motion_npy_rotpos')
