@@ -19,7 +19,6 @@ class MDM(nn.Module):
         self.nfeats = nfeats
         self.input_feats = self.njoints * self.nfeats
         self.latent_dim = latent_dim
-        self.cond_mode = kargs.get('cond_mode', 'no_cond')
 
         # Unused?
         self.glob = glob
@@ -32,18 +31,17 @@ class MDM(nn.Module):
         self.use_text = kargs.get('use_text', False)
         self.cond_mask_prob = kargs.get('cond_mask_prob', 0.)
         self.clip_dim = clip_dim
-        if self.cond_mode != 'no_cond':
-            if 'text' in self.cond_mode:
-                self.embed_text = nn.Linear(self.clip_dim, self.latent_dim)
-                print('EMBED TEXT')
-                print('Loading CLIP...')
-                self.clip_version = clip_version
-                self.clip_model = self.load_and_freeze_clip(clip_version)
+        if self.use_text:
+            self.embed_text = nn.Linear(self.clip_dim, self.latent_dim)
+            print('EMBED TEXT')
+            print('Loading CLIP...')
+            self.clip_version = clip_version
+            self.clip_model = self.load_and_freeze_clip(clip_version)
 
         # Audio Encoder
         self.use_audio = kargs.get('use_audio', False)
         self.mfcc_input = kargs.get('mfcc_input', False)
-        self.use_wav_enc = kargs.get('use_wav_enc', False) 
+        self.use_wav_enc = kargs.get('use_wav_enc', False)
         self.mfcc_dim = 26 if self.mfcc_input else 0
         self.wav_enc_dim = 32 if self.use_wav_enc else 0
         self.augmented_input_feats = self.input_feats+self.mfcc_dim+self.wav_enc_dim
@@ -139,13 +137,15 @@ class MDM(nn.Module):
         
         # Get Timesteps Embeddings
         emb = self.embed_timestep(timesteps)  # [1, BS, LAT_DIM]
-
+        
         # Text Conditioning
         force_mask = y.get('uncond', False)
-        if 'text' in self.cond_mode:
+        print('AAAAAAAAAAAAAAAAAAAAAAAH')
+        print(force_mask)
+        print(self.cond_mask_prob)
+        if self.use_text:
             enc_text = self.encode_text(y['text'])
-            if self.use_text:
-                emb += self.embed_text(self.mask_cond(enc_text, force_mask=force_mask)) # [1, BS, LAT_DIM]
+            emb += self.embed_text(self.mask_cond(enc_text, force_mask=force_mask)) # [1, BS, LAT_DIM]
 
         # Audio Conditioning
         if self.use_audio:

@@ -33,7 +33,6 @@ class TrainLoop:
         self.train_platform = train_platform
         self.model = model
         self.diffusion = diffusion
-        self.cond_mode = model.cond_mode
         self.data = data
         self.batch_size = args.batch_size
         self.microbatch = args.batch_size  # deprecating this option

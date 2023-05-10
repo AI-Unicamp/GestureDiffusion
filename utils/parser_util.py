@@ -94,10 +94,14 @@ def add_model_options(parser):
                        help="Model is trained unconditionally. That is, it is constrained by neither text nor action. "
                             "Currently tested on HumanAct12 only.")
 
-    group.add_argument("--use_text", default=False, type=bool, help="Unlock text for any usage.")
-    group.add_argument("--use_audio", default=False, type=bool, help="Unlock audio for any usage.")
-    group.add_argument("--mfcc_input", default=False, type=bool, help="Agregate audio mfcc features in the motion.")
-    group.add_argument("--use_wav_enc", default=False, type=bool, help="Agregate audio representation extracted w/ conv encoder in the motion.")
+    #group.add_argument("--use_text", default=False, type=bool, help="Unlock text for any usage.")
+    #group.add_argument("--use_audio", default=False, type=bool, help="Unlock audio for any usage.")
+    #group.add_argument("--mfcc_input", default=False, type=bool, help="Agregate audio mfcc features in the motion.")
+    #group.add_argument("--use_wav_enc", default=False, type=bool, help="Agregate audio representation extracted w/ conv encoder in the motion.")
+    group.add_argument("--use_text", action='store_true', help="Unlock text for any usage.")
+    group.add_argument("--use_audio", action='store_true', help="Unlock audio for any usage.")
+    group.add_argument("--mfcc_input", action='store_true', help="Agregate audio mfcc features in the motion.")
+    group.add_argument("--use_wav_enc", action='store_true', help="Agregate audio representation extracted w/ conv encoder in the motion.")
 
 
 
@@ -207,14 +211,10 @@ def add_evaluation_options(parser):
 
 
 def get_cond_mode(args):
-    if args.unconstrained:
-        cond_mode = 'no_cond'
-    elif args.dataset in ['kit', 'humanml']:
-        cond_mode = 'text'
-    elif args.dataset == 'genea2022':
+    if args.dataset in ['genea2022', 'genea2023']:
         cond_mode = 'text'
     else:
-        cond_mode = 'action'
+        raise NotImplementedError
     return cond_mode
 
 
