@@ -140,9 +140,6 @@ class MDM(nn.Module):
         
         # Text Conditioning
         force_mask = y.get('uncond', False)
-        print('AAAAAAAAAAAAAAAAAAAAAAAH')
-        print(force_mask)
-        print(self.cond_mask_prob)
         if self.use_text:
             enc_text = self.encode_text(y['text'])
             emb += self.embed_text(self.mask_cond(enc_text, force_mask=force_mask)) # [1, BS, LAT_DIM]
