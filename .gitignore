@@ -4,12 +4,15 @@ body_models/smpl/
 dataset/HumanML3D/
 dataset/KIT-ML
 dataset/Genea
-dataset/Beat
+dataset/beat_genea
 dataset/Genea2023
 glove/
 kit/
 save/
 t2m/
+bvhsdk/
+genea_visualizer/
+blender*/
 runcontainer.txt
 __MACOSX/
 .vscode/

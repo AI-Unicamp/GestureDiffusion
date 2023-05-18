@@ -11,15 +11,10 @@ class Genea2023(data.Dataset):
 
         if split=='train':
             srcpath = os.path.join(datapath, 'trn/main-agent/')
-        else:
+        elif split in ['val']:
             srcpath = os.path.join(datapath, 'val/main-agent/')
-
-        #if split=='train':
-        #    self.begin, self.end = 0, int(self.samples_cumulative[-1]*0.7)
-        #else:
-        #    self.begin, self.end =  int(self.samples_cumulative[-1]*0.7), self.samples_cumulative[-1]
-        
-
+        else:
+            raise NotImplementedError
 
         self.datapath = datapath
         self.window=window
@@ -162,8 +157,10 @@ class Genea2022(data.Dataset):
 
         if split=='train':
             self.begin, self.end = 0, int(self.samples_cumulative[-1]*0.7)
-        else:
+        elif split == 'val':
             self.begin, self.end =  int(self.samples_cumulative[-1]*0.7), self.samples_cumulative[-1]
+        else:
+            raise NotImplementedError
         self.length = self.end - self.begin
 
     
