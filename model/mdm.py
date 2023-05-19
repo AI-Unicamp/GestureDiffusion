@@ -144,7 +144,8 @@ class MDM(nn.Module):
 
         # Get Seed Poses
         if self.seed_poses > 0:
-            emb += self.seed_pose_encoder(y['seed']) # [1, BS, LAT_DIM]
+            seed = self.seed_pose_encoder(y['seed'])
+            emb += seed # [1, BS, LAT_DIM]
         
         # Text Conditioning
         force_mask = y.get('uncond', False)
@@ -316,6 +317,8 @@ class SeedPoseEncoder(nn.Module):
             raise NotImplementedError
 
     def forward(self, x):
-        x.flatten()
+        x = x.permute(1, 0, 2)
+        x = x.flatten(start_dim=1)
         x = self.seed_embed(x)
+        x = x.unsqueeze(0)
         return x
