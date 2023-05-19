@@ -36,7 +36,7 @@ def get_model_args(args, data):
             'cond_mask_prob': args.cond_mask_prob, 'action_emb': action_emb, 'arch': args.arch,
             'emb_trans_dec': args.emb_trans_dec, 'clip_version': clip_version, 'dataset': args.dataset,
             'use_text': args.use_text, 'use_audio': args.use_audio, 'mfcc_input': args.mfcc_input, 
-            'use_wav_enc':args.use_wav_enc}
+            'use_wav_enc':args.use_wav_enc, 'seed_poses': args.seed_poses}
 
 
 def create_gaussian_diffusion(args):

@@ -7,7 +7,7 @@ from python_speech_features import mfcc
 import librosa
 
 class Genea2023(data.Dataset):
-    def __init__(self, split='train', datapath='./dataset/Genea2023/', step=30, window=200, fps=30, sr=22050, num_frames=None):
+    def __init__(self, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10):
 
         if split=='train':
             srcpath = os.path.join(datapath, 'trn/main-agent/')
@@ -20,7 +20,8 @@ class Genea2023(data.Dataset):
         self.window=window
         self.step = step
         self.fps = fps
-        self.sr = 22050
+        self.sr = sr
+        self.n_seed_poses = n_seed_poses
 
         self.std = np.load(os.path.join(datapath, 'trn/main-agent/rotpos_Std.npy'))
         self.mean = np.load(os.path.join(datapath, 'trn/main-agent/rotpos_Mean.npy'))
@@ -32,7 +33,7 @@ class Genea2023(data.Dataset):
         self.motionpath = os.path.join(srcpath, 'motion_npy_rotpos')
         self.audiopath = os.path.join(srcpath, 'audio_npy')
         self.textpath = os.path.join(srcpath, 'tsv')
-        self.samples_per_file = [int(np.floor( (n-self.window) / self.step)) for n in self.frames]
+        self.samples_per_file = [int(np.floor( (n - self.window - self.n_seed_poses) / self.step)) for n in self.frames]
         self.samples_cumulative = [np.sum(self.samples_per_file[:i+1]) for i in range(len(self.samples_per_file))]
         self.length = self.samples_cumulative[-1]
    
@@ -62,17 +63,18 @@ class Genea2023(data.Dataset):
         else:
             sample = idx
         take_name = self.takes[file_idx][0]
-        motion = self.__getmotion( file_idx, sample)
+        motion, seed_poses = self.__getmotion( file_idx, sample)
         audio, mfcc = self.__getaudiofeats(file_idx, sample)
         n_text, text, tokens = self.__gettext(file_idx, sample)
-        return motion, text, self.window, audio, mfcc
+        return motion, text, self.window, audio, mfcc, seed_poses
 
     def __len__(self):
         return self.length
 
     def __getmotion(self, file, sample):
         motion_file = np.load(os.path.join(self.motionpath,self.takes[file][0]+'.npy'))
-        return (motion_file[sample*self.step: sample*self.step + self.window ,:] - self.mean) / self.std
+        motion = (motion_file[sample*self.step: sample*self.step + self.window + self.n_seed_poses,:] - self.mean) / self.std
+        return motion[self.n_seed_poses:,:], motion[:self.n_seed_poses,:]
 
     def __getaudiofeats(self, file, sample):
         # Load Audio
@@ -123,7 +125,7 @@ class Genea2023(data.Dataset):
         print(time.time()-start)
 
 class Genea2022(data.Dataset):
-    def __init__(self, split='train', datapath='./dataset/Genea/trn', step=30, window=200, fps=30, sr=22050, num_frames=None):
+    def __init__(self, split='train', datapath='./dataset/Genea/trn', step=30, window=200, fps=30, sr=22050, num_frames=None, n_seed_poses=None):
         self.datapath = datapath
         self.window=window
         self.step = step
@@ -139,6 +141,8 @@ class Genea2022(data.Dataset):
         self.frames = np.load(os.path.join(datapath, 'frames.npy'))
         self.samples_per_file = [int(np.floor( (n-self.window) / self.step)) for n in self.frames]
         self.samples_cumulative = [np.sum(self.samples_per_file[:i+1]) for i in range(len(self.samples_per_file))]
+        if n_seed_poses:
+            raise NotImplementedError
 
         self.std = np.array([ item if item != 0 else 1 for item in self.std ])
 

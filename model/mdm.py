@@ -81,6 +81,10 @@ class MDM(nn.Module):
         self.output_process = OutputProcess(self.data_rep, self.input_feats, self.latent_dim, self.njoints,
                                             self.nfeats)
 
+        self.seed_poses = kargs.get('seed_poses', 0)
+        print('Using Seed Poses: {}'.format(self.seed_poses))
+        self.seed_pose_encoder = SeedPoseEncoder(self.data_rep, self.njoints, self.seed_poses, self.latent_dim)
+
         # Unused?
         self.rot2xyz = Rotation2xyz(device='cpu', dataset=self.dataset)
 
@@ -137,6 +141,10 @@ class MDM(nn.Module):
         
         # Get Timesteps Embeddings
         emb = self.embed_timestep(timesteps)  # [1, BS, LAT_DIM]
+
+        # Get Seed Poses
+        if self.seed_poses > 0:
+            emb += self.seed_pose_encoder(y['seed']) # [1, BS, LAT_DIM]
         
         # Text Conditioning
         force_mask = y.get('uncond', False)
@@ -294,3 +302,20 @@ class EmbedAction(nn.Module):
         idx = input[:, 0].to(torch.long)  # an index array must be long
         output = self.action_embedding[idx]
         return output
+
+class SeedPoseEncoder(nn.Module):
+    def __init__(self, data_rep, njoints, seed_poses, latent_dim):
+        super().__init__()
+        self.data_rep = data_rep
+        self.njoints = njoints
+        self.seed_poses = seed_poses
+        self.latent_dim = latent_dim
+        if self.data_rep in ['genea_vec']:
+            self.seed_embed =  nn.Linear(self.njoints * self.seed_poses , self.latent_dim)
+        else:
+            raise NotImplementedError
+
+    def forward(self, x):
+        x.flatten()
+        x = self.seed_embed(x)
+        return x

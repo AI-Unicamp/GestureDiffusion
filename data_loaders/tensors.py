@@ -46,6 +46,10 @@ def collate(batch):
         audiobatch = [b['audio'] for b in notnone_batches]
         audiobatch = torch.cat(audiobatch, dim=0)
         cond['y'].update({'audio': audiobatch})
+    if 'seed' in notnone_batches[0]:
+        seedbatch = [b['seed'] for b in notnone_batches]
+        seedbatch = torch.cat(seedbatch, dim=0)
+        cond['y'].update({'seed': seedbatch})
     return motion, cond
 
 # an adapter to our collate func
@@ -57,6 +61,7 @@ def gg_collate(batch):
         'lengths': b[2],
         'audio': torch.tensor(b[3]).unsqueeze(0), # [seqlen] -> [1, seqlen]
         'mfcc': torch.tensor(b[4].T).float().unsqueeze(1).unsqueeze(0), # [seqlen, mfcc] -> [mfcc, 1, seqlen]
+        'seed': torch.tensor(b[5].T).float().unsqueeze(1), # [n_seed_poses, J] -> [J, 1, n_seed_poses]
     } for b in batch]
     return collate(adapted_batch)
 
