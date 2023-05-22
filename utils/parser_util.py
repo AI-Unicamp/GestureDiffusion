@@ -77,7 +77,7 @@ def add_model_options(parser):
                             " (in addition to cross-attention).")
     group.add_argument("--layers", default=8, type=int,
                        help="Number of layers.")
-    group.add_argument("--latent_dim", default=512, type=int,
+    group.add_argument("--latent_dim", default=256, type=int,
                        help="Transformer/GRU width.")
     group.add_argument("--cond_mask_prob", default=.1, type=float,
                        help="The probability of masking the condition during training."
@@ -128,11 +128,11 @@ def add_training_options(parser):
                        help="If -1, will use all samples in the specified split.")
     group.add_argument("--log_interval", default=1_000, type=int,
                        help="Log losses each N steps")
-    group.add_argument("--save_interval", default=5_000, type=int,
+    group.add_argument("--save_interval", default=10_000, type=int,
                        help="Save checkpoints and run evaluation each N steps")
     group.add_argument("--num_steps", default=600_000, type=int,
                        help="Training will stop after the specified number of steps.")
-    group.add_argument("--num_frames", default=60, type=int,
+    group.add_argument("--num_frames", default=120, type=int,
                        help="Limit for the maximal number of frames. In HumanML3D and KIT this field is ignored.")
     group.add_argument("--resume_checkpoint", default="", type=str,
                        help="If not empty, will start from the specified checkpoint (path to model###.pt file).")

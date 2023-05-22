@@ -69,8 +69,8 @@ class MDM(nn.Module):
         self.cl_head=8
         self.project_to_lat = nn.Linear(self.latent_dim * 2 + self.audio_feat_dim, self.latent_dim)
         self.cross_local_attention = LocalAttention(
-            dim=32,  # dimension of each head (you need to pass this in for relative positional encoding)
-            window_size=11, 
+        #    dim=32,  # dimension of each head (you need to pass this in for relative positional encoding)
+            window_size=10, 
             causal=True,  
             look_backward=1,  
             look_forward=0,     
@@ -121,22 +121,23 @@ class MDM(nn.Module):
             emb_text = emb_text.squeeze(0)                                              # [BS, TEXT_DIM]
 
         # Seed Poses Embeddings
-        flat_seed = y['seed'].squeeze(2).reshape(bs, -1)                              # [BS, POSE_DIM, 1, SEED_POSES] -> [BS, POSE_DIM, SEED_POSES] -> [BS, POSE_DIM * SEED_POSES] 
-        emb_seed = self.embed_text(self.mask_cond(flat_seed, force_mask=force_mask))  # [BS, LAT_DIM] or [BS, LAT_DIM - TEXT_DIM]
+        flat_seed = y['seed'].squeeze(2).reshape(bs, -1)        # [BS, POSE_DIM, 1, SEED_POSES] -> [BS, POSE_DIM, SEED_POSES] -> [BS, POSE_DIM * SEED_POSES] 
+        emb_seed = self.seed_pose_encoder(flat_seed)            # [BS, LAT_DIM] or [BS, LAT_DIM - TEXT_DIM]
 
         # Timesteps Embeddings
         emb_t = self.embed_timestep(timesteps)                  # [1, BS, LAT_DIM]
 
         # Audio Embeddings
-        if self.mfcc_input:                                     # TODO: is it actually the raw mfccs?
+        if self.mfcc_input:                                     # TODO: is it actually the raw mfccs? 
             emb_audio = y['mfcc']                               # [BS, MFCC_DIM, 1, CHUNK_LEN]
         elif self.use_wav_enc:
             emb_audio = self.wav_encoder(y['audio'])            # [BS, WAV_ENC_DIM, 1, CHUNK_LEN]
+            raise NotImplementedError                           # TODO: Resolve CNNs
         else:
             raise NotImplementedError
         emb_audio = emb_audio.squeeze(2)                        # [BS, AUDIO_DIM, CHUNK_LEN], (AUDIO_DIM = MFCC_DIM or WAV_ENC_DIM)
         emb_audio = emb_audio.permute((2, 0, 1))                # [CHUNK_LEN, BS, AUDIO_DIM]
-        
+
         # Pose Embeddings
         emb_pose = self.input_process(x)                        # [CHUNK_LEN, BS, LAT_DIM]
 
@@ -151,7 +152,7 @@ class MDM(nn.Module):
         if self.use_text:
             embs_stxt = torch.cat((emb_text,emb_seed),axis=1)   # [BS, LAT_DIM] 
         else:
-            embs_stxt = torch.cat((emb_text,emb_seed),axis=1)   # [BS, LAT_DIM] 
+            embs_stxt = emb_seed                                # [BS, LAT_DIM] 
 
         # Sum All Coarse-Grained Embeddings (t + Seed w/ Text)
         coa_embs = (embs_stxt + emb_t)                          # [1, BS, LAT_DIM]
@@ -176,14 +177,14 @@ class MDM(nn.Module):
         xseq = xseq.reshape(bs*self.cl_head, nframes, -1)       # [BS * CL_HEAD, CHUNK_LEN, LAT_DIM / CL_HEAD]
 
         # RPE Embeddings
-        pos_emb = self.rel_pos(xseq)                            # TODO: SIZE, UNDERSTAND
-        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # TODO: SIZE, UNDERSTAND
+        pos_emb = self.rel_pos(xseq)                            # [CHUNK_LEN, BS]
+        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # [LAT_DIM, CHUNK_LEN, BS]
 
         # Apply Cross Local Attention
-        packed_shape = [torch.Size([bs, self.cl_head])]         # TODO: SIZE, UNDERSTAND
-        mask_local = torch.ones(bs, nframes).bool()             # TODO: SIZE, UNDERSTAND
-        xseq = self.cross_local_attention(xseq, xseq, xseq,     # TODO: SIZE, UNDERSTAND
-            packed_shape=packed_shape, mask=mask_local)         # TODO: SIZE, UNDERSTAND
+        packed_shape = [torch.Size([bs, self.cl_head])]         # [1] = [torch.Size([BS, CL_HEAD])
+        mask_local = torch.ones(bs, nframes).bool().to(device=xseq.device)             # [BS, CHUNK_LEN]
+        xseq = self.cross_local_attention(xseq, xseq, xseq,     
+            packed_shape=packed_shape, mask=mask_local)         # [BS, CL_HEAD, CHUNK_LEN, LAT_DIM / CL_HEAD]
         
         # Data Reshaping to cat Global Information
         xseq = xseq.permute(0, 2, 1, 3)  
@@ -200,8 +201,8 @@ class MDM(nn.Module):
         xseq = xseq.reshape(bs*self.cl_head, nframes + 1, -1)   # [BS * CL_HEAD, CHUNK_LEN+1, LAT_DIM / CL_HEAD]
 
         # RPE Embeddings
-        pos_emb = self.rel_pos(xseq)                            # TODO: SIZE, UNDERSTAND
-        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # TODO: SIZE, UNDERSTAND
+        pos_emb = self.rel_pos(xseq)                            # [CHUNK_LEN+1, BS]
+        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # [LAT_DIM, CHUNK_LEN+1, BS]
 
         # Data Reshaping
         xseq_rpe = xseq.reshape(bs,self.cl_head,nframes+1,-1)   # [BS, CL_HEAD, CHUNK_LEN+1, LAT_DIM / CL_HEAD]

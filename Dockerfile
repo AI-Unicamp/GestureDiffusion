@@ -32,3 +32,4 @@ RUN pip install blobfile
 RUN pip install PyYAML
 RUN pip install librosa
 RUN pip install python_speech_features
+RUN pip install einops
