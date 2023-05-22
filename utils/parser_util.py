@@ -25,11 +25,6 @@ def parse_and_load_from_model(parser):
     for a in args_to_overwrite:
         if a in model_args.keys():
             setattr(args, a, model_args[a])
-
-        elif 'cond_mode' in model_args: # backward compitability
-            unconstrained = (model_args['cond_mode'] == 'no_cond')
-            setattr(args, 'unconstrained', unconstrained)
-
         else:
             print('Warning: was not able to load [{}], using default value [{}] instead.'.format(a, args.__dict__[a]))
 
@@ -206,14 +201,6 @@ def add_evaluation_options(parser):
                        help="For classifier-free sampling - specifies the s parameter, as defined in the paper.")
 
 
-def get_cond_mode(args):
-    if args.dataset in ['genea2022', 'genea2023']:
-        cond_mode = 'text'
-    else:
-        raise NotImplementedError
-    return cond_mode
-
-
 def train_args():
     parser = ArgumentParser()
     add_base_options(parser)
@@ -231,13 +218,6 @@ def generate_args():
     add_sampling_options(parser)
     add_generate_options(parser)
     args = parse_and_load_from_model(parser)
-    cond_mode = get_cond_mode(args)
-
-    if (args.input_text or args.text_prompt) and cond_mode != 'text':
-        raise Exception('Arguments input_text and text_prompt should not be used for an action condition. Please use action_file or action_name.')
-    elif (args.action_file or args.action_name) and cond_mode != 'action':
-        raise Exception('Arguments action_file and action_name should not be used for a text condition. Please use input_text or text_prompt.')
-
     return args
 
 

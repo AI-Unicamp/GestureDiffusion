@@ -1,7 +1,6 @@
 from model.mdm import MDM
 from diffusion import gaussian_diffusion as gd
 from diffusion.respace import SpacedDiffusion, space_timesteps
-from utils.parser_util import get_cond_mode
 
 
 def load_model_wo_clip(model, state_dict):
@@ -20,22 +19,18 @@ def get_model_args(args, data):
 
     # default args
     clip_version = 'ViT-B/32'
-    action_emb = 'tensor'
-    cond_mode = get_cond_mode(args)
-    num_actions = 1
 
     if args.dataset in ['genea2022', 'genea2023']:
         data_rep = 'genea_vec'
         njoints = 498
         nfeats = 1
 
-    return {'modeltype': '', 'njoints': njoints, 'nfeats': nfeats, 'num_actions': num_actions,
+    return {'modeltype': '', 'njoints': njoints, 'nfeats': nfeats, 
             'translation': True, 'pose_rep': 'rot6d', 'glob': True, 'glob_rot': True,
             'latent_dim': args.latent_dim, 'ff_size': 1024, 'num_layers': args.layers, 'num_heads': 4,
-            'dropout': 0.1, 'activation': "gelu", 'data_rep': data_rep, 'cond_mode': cond_mode,
-            'cond_mask_prob': args.cond_mask_prob, 'action_emb': action_emb, 'arch': args.arch,
-            'emb_trans_dec': args.emb_trans_dec, 'clip_version': clip_version, 'dataset': args.dataset,
-            'use_text': args.use_text, 'use_audio': args.use_audio, 'mfcc_input': args.mfcc_input, 
+            'dropout': 0.1, 'activation': "gelu", 'data_rep': data_rep, 'cond_mask_prob': args.cond_mask_prob, 
+            'clip_version': clip_version, 'dataset': args.dataset,
+            'use_text': args.use_text, 'mfcc_input': args.mfcc_input, 
             'use_wav_enc':args.use_wav_enc, 'seed_poses': args.seed_poses}
 
 

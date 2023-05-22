@@ -4,63 +4,86 @@ import torch.nn as nn
 import torch.nn.functional as F
 import clip
 from model.rotation2xyz import Rotation2xyz
+from model.local_attention import SinusoidalEmbeddings, apply_rotary_pos_emb
+from model.local_attention import LocalAttention
 
 class MDM(nn.Module):
-    def __init__(self, modeltype, njoints, nfeats, num_actions, translation, pose_rep, glob, glob_rot,
-                 latent_dim=256, ff_size=1024, num_layers=8, num_heads=4, dropout=0.1,
-                 ablation=None, activation="gelu", legacy=False, data_rep='rot6d', dataset='amass', clip_dim=512,
-                 arch='trans_enc', emb_trans_dec=False, clip_version=None, **kargs):
+    def __init__(self, njoints, nfeats, pose_rep, data_rep, latent_dim=256, text_dim=64, ff_size=1024,
+                  num_layers=8, num_heads=4, dropout=0.1, activation="gelu",
+                 dataset='amass', clip_dim=512, clip_version=None, **kargs):
         super().__init__()
 
         # General Configs        
         self.dataset = dataset
         self.pose_rep = pose_rep
+        self.data_rep = data_rep
         self.njoints = njoints
         self.nfeats = nfeats
         self.input_feats = self.njoints * self.nfeats
         self.latent_dim = latent_dim
+        self.dropout = dropout
 
-        # Unused?
-        self.glob = glob
-        self.glob_rot = glob_rot
-        self.translation = translation
-        self.num_actions = num_actions
-        self.action_emb = kargs.get('action_emb', None)
+        # Timestep Network
+        self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, self.dropout)
+        self.embed_timestep = TimestepEmbedder(self.latent_dim, self.sequence_pos_encoder)
 
         # Text Encoder 
         self.use_text = kargs.get('use_text', False)
         self.cond_mask_prob = kargs.get('cond_mask_prob', 0.)
+        self.text_dim = text_dim
         self.clip_dim = clip_dim
         if self.use_text:
-            self.embed_text = nn.Linear(self.clip_dim, self.latent_dim)
+            self.embed_text = nn.Linear(self.clip_dim, self.text_dim)
             print('EMBED TEXT')
             print('Loading CLIP...')
             self.clip_version = clip_version
             self.clip_model = self.load_and_freeze_clip(clip_version)
 
+        # Seed Pose Encoder
+        self.seed_poses = kargs.get('seed_poses', 0)
+        print('Using {} Seed Poses.'.format(self.seed_poses))
+        if self.seed_poses > 0:
+            if self.use_text:
+                self.seed_pose_encoder = SeedPoseEncoder(self.njoints, self.seed_poses, self.latent_dim - self.text_dim)
+            else:
+                self.seed_pose_encoder = SeedPoseEncoder(self.njoints, self.seed_poses, self.latent_dim)
+
         # Audio Encoder
-        self.use_audio = kargs.get('use_audio', False)
         self.mfcc_input = kargs.get('mfcc_input', False)
         self.use_wav_enc = kargs.get('use_wav_enc', False)
-        self.mfcc_dim = 26 if self.mfcc_input else 0
-        self.wav_enc_dim = 32 if self.use_wav_enc else 0
-        self.augmented_input_feats = self.input_feats+self.mfcc_dim+self.wav_enc_dim
-        if self.use_audio:
-            print('Using Audio Features:')
-            if self.mfcc_input:
-                print('Selected Features: MFCCs')
-            if self.use_wav_enc:
-                print('Selected Features: WavEncoder Representations')
-                self.wav_encoder = WavEncoder()
+        print('Using Audio Features:')
+        if self.mfcc_input:
+            self.mfcc_dim = 26
+            self.audio_feat_dim = self.mfcc_dim
+            print('Selected Features: MFCCs')
+        if self.use_wav_enc:
+            self.wav_enc_dim = 32 
+            self.audio_feat_dim = self.wav_enc_dim
+            print('Selected Features: WavEncoder Representations')
+            self.wav_encoder = WavEncoder()
 
-        # Input Linear
-        self.data_rep = data_rep
-        self.input_process = InputProcess(self.data_rep, self.augmented_input_feats, self.latent_dim)
+        # Pose Encoder
+        self.input_process = InputProcess(self.data_rep, self.input_feats, self.latent_dim)
 
-        # Denoiser Network
+        # Cross-Local Attention
+        self.cl_head=8
+        self.project_to_lat = nn.Linear(self.latent_dim * 2 + self.audio_feat_dim, self.latent_dim)
+        self.cross_local_attention = LocalAttention(
+            dim=32,  # dimension of each head (you need to pass this in for relative positional encoding)
+            window_size=11, 
+            causal=True,  
+            look_backward=1,  
+            look_forward=0,     
+            dropout=0.1, 
+            exact_windowsize=False
+        )
+
+        # Positional Encodings
+        self.rel_pos = SinusoidalEmbeddings(self.latent_dim // self.cl_head)
+
+        # Self-Attention
         self.num_heads = num_heads
         self.ff_size = ff_size
-        self.dropout = dropout
         self.activation = activation
         self.num_layers = num_layers
         self.seqTransEncoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(
@@ -69,24 +92,133 @@ class MDM(nn.Module):
                                                         dim_feedforward=self.ff_size,
                                                         dropout=self.dropout,
                                                         activation=self.activation),
-                                                        num_layers=self.num_layers)
+                                                        num_layers=self.num_layers)     
 
-        # Sinusoidal Encoder
-        self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, self.dropout)
-        
-        # Timestep Network
-        self.embed_timestep = TimestepEmbedder(self.latent_dim, self.sequence_pos_encoder)
-
-        # Output Linear
+        # Project Representation to Output Pose
         self.output_process = OutputProcess(self.data_rep, self.input_feats, self.latent_dim, self.njoints,
                                             self.nfeats)
 
-        self.seed_poses = kargs.get('seed_poses', 0)
-        print('Using Seed Poses: {}'.format(self.seed_poses))
-        self.seed_pose_encoder = SeedPoseEncoder(self.data_rep, self.njoints, self.seed_poses, self.latent_dim)
-
         # Unused?
         self.rot2xyz = Rotation2xyz(device='cpu', dataset=self.dataset)
+
+    def forward(self, x, timesteps, y=None):
+        """
+        x: [batch_size, njoints, nfeats, max_frames], denoted x_t in the paper
+        timesteps: [batch_size] (int)
+        """
+        # Sizes
+        bs, njoints, nfeats, nframes = x.shape  # [BS, POSE_DIM, 1, CHUNK_LEN]
+        force_mask = y.get('uncond', False)     # TODO: UNDERSTAND MASK
+
+        #############################
+        #### FEATURE CALCULATION ####
+        #############################
+        
+        # Text Embeddings
+        if self.use_text:
+            enc_text = self.encode_text(y['text'])
+            emb_text = self.embed_text(self.mask_cond(enc_text, force_mask=force_mask)) # [1, BS, LAT_DIM]
+            emb_text = emb_text.squeeze(0)                                              # [BS, TEXT_DIM]
+
+        # Seed Poses Embeddings
+        flat_seed = y['seed'].squeeze(2).reshape(bs, -1)                              # [BS, POSE_DIM, 1, SEED_POSES] -> [BS, POSE_DIM, SEED_POSES] -> [BS, POSE_DIM * SEED_POSES] 
+        emb_seed = self.embed_text(self.mask_cond(flat_seed, force_mask=force_mask))  # [BS, LAT_DIM] or [BS, LAT_DIM - TEXT_DIM]
+
+        # Timesteps Embeddings
+        emb_t = self.embed_timestep(timesteps)                  # [1, BS, LAT_DIM]
+
+        # Audio Embeddings
+        if self.mfcc_input:                                     # TODO: is it actually the raw mfccs?
+            emb_audio = y['mfcc']                               # [BS, MFCC_DIM, 1, CHUNK_LEN]
+        elif self.use_wav_enc:
+            emb_audio = self.wav_encoder(y['audio'])            # [BS, WAV_ENC_DIM, 1, CHUNK_LEN]
+        else:
+            raise NotImplementedError
+        emb_audio = emb_audio.squeeze(2)                        # [BS, AUDIO_DIM, CHUNK_LEN], (AUDIO_DIM = MFCC_DIM or WAV_ENC_DIM)
+        emb_audio = emb_audio.permute((2, 0, 1))                # [CHUNK_LEN, BS, AUDIO_DIM]
+        
+        # Pose Embeddings
+        emb_pose = self.input_process(x)                        # [CHUNK_LEN, BS, LAT_DIM]
+
+        #############################
+        #### FEATURE AGGREGATION ####
+        #############################
+
+        # Cat Pose w/ Audio (Fine-Grained) Embeddings
+        fg_embs = torch.cat((emb_pose, emb_audio), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM]
+
+        # Cat Seed w/ Text Embeddings (if exist)
+        if self.use_text:
+            embs_stxt = torch.cat((emb_text,emb_seed),axis=1)   # [BS, LAT_DIM] 
+        else:
+            embs_stxt = torch.cat((emb_text,emb_seed),axis=1)   # [BS, LAT_DIM] 
+
+        # Sum All Coarse-Grained Embeddings (t + Seed w/ Text)
+        coa_embs = (embs_stxt + emb_t)                          # [1, BS, LAT_DIM]
+        
+        # Repeat Coarse-Grained Summation (to match chunk)
+        coa_embs_rep = coa_embs.repeat(nframes, 1, 1)           # [CHUNK_LEN, BS, LAT_DIM]
+
+        # Concatenate All to form feature inputs
+        embs = torch.cat((fg_embs, coa_embs_rep), axis=2)       # [CHUNK_LEN, BS, LAT_DIM + LAT_DIM + AUDIO_DIM]
+
+        # Project to Latent Dim
+        xseq = self.project_to_lat(embs)                        # [CHUNK_LEN, BS, LAT_DIM]
+
+        ######################
+        #### DENOISE PASS ####
+        ######################
+
+        # Data Reshaping (Insert multiple att heads)
+        xseq = xseq.permute(1, 0, 2)                            # [BS, CHUNK_LEN, LAT_DIM]
+        xseq = xseq.view(bs, nframes, self.cl_head, -1)         # [BS, CHUNK_LEN, CL_HEAD, LAT_DIM / CL_HEAD] 
+        xseq = xseq.permute(0, 2, 1, 3)                         # [BS, CL_HEAD, CHUNK_LEN, LAT_DIM / CL_HEAD]
+        xseq = xseq.reshape(bs*self.cl_head, nframes, -1)       # [BS * CL_HEAD, CHUNK_LEN, LAT_DIM / CL_HEAD]
+
+        # RPE Embeddings
+        pos_emb = self.rel_pos(xseq)                            # TODO: SIZE, UNDERSTAND
+        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # TODO: SIZE, UNDERSTAND
+
+        # Apply Cross Local Attention
+        packed_shape = [torch.Size([bs, self.cl_head])]         # TODO: SIZE, UNDERSTAND
+        mask_local = torch.ones(bs, nframes).bool()             # TODO: SIZE, UNDERSTAND
+        xseq = self.cross_local_attention(xseq, xseq, xseq,     # TODO: SIZE, UNDERSTAND
+            packed_shape=packed_shape, mask=mask_local)         # TODO: SIZE, UNDERSTAND
+        
+        # Data Reshaping to cat Global Information
+        xseq = xseq.permute(0, 2, 1, 3)  
+        xseq = xseq.reshape(bs, nframes, -1)                    # [BS, CHUNK_LEN, LAT_DIM] 
+        xseq = xseq.permute(1, 0, 2)                            # [CHUNK_LEN, BS, LAT_DIM] 
+
+        # Concat Coarse Grained Embeddings
+        xseq = torch.cat((coa_embs, xseq), axis=0)              # [CHUNK_LEN+1, BS, LAT_DIM]    
+
+        # Data Reshaping (Insert multiple att heads)
+        xseq = xseq.permute(1, 0, 2)                            # [BS, CHUNK_LEN+1, LAT_DIM]
+        xseq = xseq.view(bs, nframes + 1, self.cl_head, -1)     # [BS, CHUNK_LEN+1, CL_HEAD, LAT_DIM / CL_HEAD]
+        xseq = xseq.permute(0, 2, 1, 3)                         # [BS, CL_HEAD, CHUNK_LEN+1, LAT_DIM / CL_HEAD]
+        xseq = xseq.reshape(bs*self.cl_head, nframes + 1, -1)   # [BS * CL_HEAD, CHUNK_LEN+1, LAT_DIM / CL_HEAD]
+
+        # RPE Embeddings
+        pos_emb = self.rel_pos(xseq)                            # TODO: SIZE, UNDERSTAND
+        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # TODO: SIZE, UNDERSTAND
+
+        # Data Reshaping
+        xseq_rpe = xseq.reshape(bs,self.cl_head,nframes+1,-1)   # [BS, CL_HEAD, CHUNK_LEN+1, LAT_DIM / CL_HEAD]
+        xseq = xseq_rpe.permute(0, 2, 1, 3)                     # [BS, CHUNK_LEN+1, CL_HEAD, LAT_DIM / CL_HEAD]     
+        xseq = xseq.view(bs, nframes + 1, -1)                   # [BS, CHUNK_LEN+1, LAT_DIM]
+        xseq = xseq.permute(1, 0, 2)                            # [CHUNK_LEN+1, BS, LAT_DIM]
+
+        # Self-Attention
+        output = self.seqTransEncoder(xseq)                     # [CHUNK_LEN+1, BS, LAT_DIM] 
+
+        # Ignore First Token
+        output = output[1:]                                     # [CHUNK_LEN, BS, LAT_DIM]
+
+        # Linear Output Feature Pass
+        output = self.output_process(output)                    # [BS, POSE_DIM, 1, CHUNK_LEN]
+
+        return output
 
     def parameters_wo_clip(self):
         return [p for name, p in self.named_parameters() if not name.startswith('clip_model.')]
@@ -130,57 +262,7 @@ class MDM(nn.Module):
         else:
             texts = clip.tokenize(raw_text, truncate=True).to(device) # [bs, context_length] # if n_tokens > 77 -> will truncate
         return self.clip_model.encode_text(texts).float()
-
-    def forward(self, x, timesteps, y=None):
-        """
-        x: [batch_size, njoints, nfeats, max_frames], denoted x_t in the paper
-        timesteps: [batch_size] (int)
-        """
-        # Get Sizes
-        bs, njoints, nfeats, nframes = x.shape # [BS, POSE_DIM, 1, CHUNK_LEN]
-        
-        # Get Timesteps Embeddings
-        emb = self.embed_timestep(timesteps)  # [1, BS, LAT_DIM]
-
-        # Get Seed Poses
-        if self.seed_poses > 0:
-            seed = self.seed_pose_encoder(y['seed'])
-            emb += seed # [1, BS, LAT_DIM]
-        
-        # Text Conditioning
-        force_mask = y.get('uncond', False)
-        if self.use_text:
-            enc_text = self.encode_text(y['text'])
-            emb += self.embed_text(self.mask_cond(enc_text, force_mask=force_mask)) # [1, BS, LAT_DIM]
-
-        # Audio Conditioning
-        if self.use_audio:
-            if self.mfcc_input:
-                mfccs = y['mfcc']                               # [BS, MFCC_DIM, 1, CHUNK_LEN]
-                x = torch.cat((x, mfccs), axis=1)               # [BS, POSE_DIM + MFCC_DIM, 1, CHUNK_LEN]
-            if self.use_wav_enc:
-                audio_representation = self.wav_encoder(y['audio']) # [BS, WAV_ENC_DIM, 1, CHUNK_LEN]
-                x = torch.cat((x, audio_representation), axis=1)    # [BS, POSE_DIM + WAV_ENC_DIM, 1, CHUNK_LEN]
-
-        # Linear Input Feature Pass
-        x = self.input_process(x)               # [CHUNK_LEN, BS, LAT_DIM]
-
-        # Cat 0th-conditioning-token
-        xseq = torch.cat((emb, x), axis=0)      # [CHUNK_LEN+1, BS, LAT_DIM]  
-        
-        # Apply Positional Sinusoidal Embeddings
-        xseq = self.sequence_pos_encoder(xseq)  # [CHUNK_LEN+1, BS, LAT_DIM]  
-
-        # Transformer Encoder Pass
-        output = self.seqTransEncoder(xseq)     # [CHUNK_LEN+1, BS, LAT_DIM]
-
-        # Ignore First Token
-        output = output[1:]                     # [CHUNK_LEN, BS, LAT_DIM]
-
-        # Linear Output Feature Pass
-        output = self.output_process(output)    # [BS, POSE_DIM, 1, CHUNK_LEN]
-        return output
-
+    
     def _apply(self, fn):
         super()._apply(fn)
         self.rot2xyz.smpl_model._apply(fn)
@@ -293,32 +375,15 @@ class OutputProcess(nn.Module):
         output = output.reshape(nframes, bs, self.njoints, self.nfeats) # [CHUNK_LEN, BS, POSE_DIM, 1]
         output = output.permute(1, 2, 3, 0)  
         return output
-
-class EmbedAction(nn.Module):
-    def __init__(self, num_actions, latent_dim):
-        super().__init__()
-        self.action_embedding = nn.Parameter(torch.randn(num_actions, latent_dim))
-
-    def forward(self, input):
-        idx = input[:, 0].to(torch.long)  # an index array must be long
-        output = self.action_embedding[idx]
-        return output
-
+    
 class SeedPoseEncoder(nn.Module):
-    def __init__(self, data_rep, njoints, seed_poses, latent_dim):
+    def __init__(self, njoints, seed_poses, latent_dim):
         super().__init__()
-        self.data_rep = data_rep
         self.njoints = njoints
         self.seed_poses = seed_poses
         self.latent_dim = latent_dim
-        if self.data_rep in ['genea_vec']:
-            self.seed_embed =  nn.Linear(self.njoints * self.seed_poses , self.latent_dim)
-        else:
-            raise NotImplementedError
+        self.seed_embed = nn.Linear(self.njoints * self.seed_poses, self.latent_dim)
 
     def forward(self, x):
-        x = x.permute(1, 0, 2)
-        x = x.flatten(start_dim=1)
         x = self.seed_embed(x)
-        x = x.unsqueeze(0)
         return x
