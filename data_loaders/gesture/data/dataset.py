@@ -11,14 +11,15 @@ class Genea2023(data.Dataset):
 
         if split=='train':
             srcpath = os.path.join(datapath, 'trn/main-agent/')
+            self.step = step
         elif split in ['val']:
             srcpath = os.path.join(datapath, 'val/main-agent/')
+            self.step = window
         else:
             raise NotImplementedError
 
         self.datapath = datapath
         self.window=window
-        self.step = step
         self.fps = fps
         self.sr = sr
         self.n_seed_poses = n_seed_poses

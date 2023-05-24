@@ -15,7 +15,7 @@ class ClassifierFreeSampleModel(nn.Module):
 
         # pointers to inner model
         self.rot2xyz = self.model.rot2xyz
-        self.translation = self.model.translation
+        #self.translation = self.model.translation
         self.njoints = self.model.njoints
         self.nfeats = self.model.nfeats
         self.data_rep = self.model.data_rep

@@ -102,6 +102,8 @@ def add_data_options(parser):
                        help="Dataset name (choose from list).")
     group.add_argument("--data_dir", default="", type=str,
                        help="If empty, will use defaults according to the specified dataset.")
+    group.add_argument("--num_frames", default=120, type=int,
+                       help="Limit for the maximal number of frames. In HumanML3D and KIT this field is ignored.")
 
 
 def add_training_options(parser):
@@ -132,8 +134,6 @@ def add_training_options(parser):
                        help="Save checkpoints and run evaluation each N steps")
     group.add_argument("--num_steps", default=600_000, type=int,
                        help="Training will stop after the specified number of steps.")
-    group.add_argument("--num_frames", default=120, type=int,
-                       help="Limit for the maximal number of frames. In HumanML3D and KIT this field is ignored.")
     group.add_argument("--resume_checkpoint", default="", type=str,
                        help="If not empty, will start from the specified checkpoint (path to model###.pt file).")
 

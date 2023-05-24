@@ -117,12 +117,13 @@ class MDM(nn.Module):
         # Text Embeddings
         if self.use_text:
             enc_text = self.encode_text(y['text'])
-            emb_text = self.embed_text(self.mask_cond(enc_text, force_mask=force_mask)) # [1, BS, LAT_DIM]
+            emb_text = self.embed_text(self.mask_cond(enc_text, force_mask=force_mask)) # [1, BS, TEXT_DIM]
             emb_text = emb_text.squeeze(0)                                              # [BS, TEXT_DIM]
 
         # Seed Poses Embeddings
         flat_seed = y['seed'].squeeze(2).reshape(bs, -1)        # [BS, POSE_DIM, 1, SEED_POSES] -> [BS, POSE_DIM, SEED_POSES] -> [BS, POSE_DIM * SEED_POSES] 
-        emb_seed = self.seed_pose_encoder(flat_seed)            # [BS, LAT_DIM] or [BS, LAT_DIM - TEXT_DIM]
+        #emb_seed = self.seed_pose_encoder(flat_seed)
+        emb_seed = self.seed_pose_encoder(self.mask_cond(flat_seed, force_mask=force_mask)) # [BS, LAT_DIM] or [BS, LAT_DIM - TEXT_DIM]
 
         # Timesteps Embeddings
         emb_t = self.embed_timestep(timesteps)                  # [1, BS, LAT_DIM]
