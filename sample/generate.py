@@ -19,7 +19,6 @@ import shutil
 from data_loaders.tensors import gg_collate
 from soundfile import write as wavwrite
 import bvhsdk
-import matplotlib.pyplot as plt
 
 def main():
     args = generate_args()
@@ -30,6 +29,7 @@ def main():
     if args.dataset in ['genea2022', 'genea2023']:
         #n_frames = 200
         fps = 30
+        n_joints = 83
         bvhreference = bvhsdk.ReadFile('./dataset/Genea2023/trn/main-agent/bvh/trn_2023_v0_000_main-agent.bvh', skipmotion=True)
     else:
         raise NotImplementedError
@@ -42,21 +42,26 @@ def main():
         elif args.input_text != '':
             out_path += '_' + os.path.basename(args.input_text).replace('.txt', '').replace(' ', '_').replace('.', '')
 
+    # Hard-coded takes to be generated
+    takes_to_generate = [ 5 ,  9, 20]
+    chunks_per_take = 2 # TODO: implement for whole take
+    num_samples = len(takes_to_generate)
 
-    assert args.num_samples <= args.batch_size, \
-        f'Please either increase batch_size({args.batch_size}) or reduce num_samples({args.num_samples})'
+
+    assert num_samples <= args.batch_size, \
+        f'Please either increase batch_size({args.batch_size}) or reduce num_samples'
     # So why do we need this check? In order to protect GPU from a memory overload in the following line.
     # If your GPU can handle batch size larger then default, you can specify it through --batch_size flag.
     # If it doesn't, and you still want to sample more prompts, run this script with different seeds
     # (specify through the --seed flag)
-    args.batch_size = args.num_samples  # Sampling a single batch from the testset, with exactly args.num_samples
+    args.batch_size = num_samples  # Sampling a single batch from the testset, with exactly args.num_samples
+
+    #inputs_i = [155,271,320,400,500,600,700,800,1145,1185]
+    
 
     print('Loading dataset...')
-    data = load_dataset(args)
-    total_num_samples = args.num_samples * args.num_repetitions
-
-    #takes_to_generate = [ 5 ,  9, 20]
-    takes_to_generate = [ 5 ]
+    data = load_dataset(args, num_samples)
+    total_num_samples = num_samples * chunks_per_take
 
     print("Creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(args, data)
@@ -70,29 +75,44 @@ def main():
     model.to(dist_util.dev())
     model.eval()  # disable random masking
 
-    audios = []
-    motions = []
-    motions_rot = []
-    gt_motions_rot = []
-    all_text = []
+    #iterator = iter(data)
+
+    all_motions = [] #np.zeros(shape=(num_samples, n_joints, 3, args.num_frames*chunks_per_take))
+    all_motions_rot = []
     all_lengths = []
-    for take in takes_to_generate:
-        print("### Sampling take #{0}: {1}".format(take,data.dataset.takes[take][0]))
-        start = 0 if take == 0 else data.dataset.samples_cumulative[take-1]
-        end = data.dataset.samples_cumulative[take]
-        inputs = [ data.dataset.__getitem__(input) for input in range(start, end) ]
-        gt_motion, model_kwargs = gg_collate(inputs)
-        model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()}
+    all_text = []
+    all_audios = []
+    all_gt_motions_rot = []
+
+    for chunk in range(chunks_per_take): # Motion is generated in chunks, for each chunk we load the corresponding data from the dataset for every take in takes_to_generate
+
+        inputs = []
+        for take in takes_to_generate: # For each take we will load the current chunk
+            chunk_index = 0 if take == 0 else data.dataset.samples_cumulative[take-1]
+            chunk_index += chunk
+            if chunk_index >= data.dataset.samples_cumulative[take]:
+                raise ValueError(f'Chunk {chunk} is out of range for take {take}.') #i.e., you are getting out of the take
+            inputs.append(data.dataset.__getitem__(chunk_index))
+
+        gt_motion, model_kwargs = gg_collate(inputs) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
+        model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [njoints, num_samples(bs), seed_len]
+
+        if chunk == 0: #TODO: send mean pose
+            pass
+        else:
+            model_kwargs['y']['seed'] = sample_out.permute(2, 1, 0, 3).squeeze()[...,-args.seed_poses:]
+        
+        print('### Sampling chunk {} of {}'.format(chunk+1, chunks_per_take))
 
         # add CFG scale to batch
-        if args.guidance_param != 1:
-            model_kwargs['y']['scale'] = torch.ones(len(inputs), device=dist_util.dev()) * args.guidance_param
+        if args.guidance_param != 1: # default 2.5
+            model_kwargs['y']['scale'] = torch.ones(num_samples, device=dist_util.dev()) * args.guidance_param
 
         sample_fn = diffusion.p_sample_loop
 
-        sample = sample_fn(
+        sample_out = sample_fn(
             model,
-            (len(inputs), model.njoints, model.nfeats, args.num_frames),
+            (num_samples, model.njoints, model.nfeats, args.num_frames),
             clip_denoised=False,
             model_kwargs=model_kwargs,
             skip_timesteps=0,  # 0 is the default value - i.e. don't skip any step
@@ -101,51 +121,72 @@ def main():
             dump_steps=None,
             noise=None,
             const_noise=False,
-        )
+        ) # [num_samples(bs), njoints, 1, chunk_len]
+
+        sample = data.dataset.inv_transform(sample_out.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
         
-        #teste = sample.cpu()
-        #teste_gt = gt_motion.cpu()
-        #print(teste.shape)
-        #teste2 = np.concatenate((teste[0,:,:,:], teste[1,:,:,:], teste[2,:,:,:]), axis=2)
-        #teste2_gt = np.concatenate((teste_gt[0,:,:,:], teste_gt[1,:,:,:], teste_gt[2,:,:,:]), axis=2)
-        #for i in range(3):
-        #    plt.plot(teste2[6+i,0,:])
-        #    plt.plot(teste2_gt[6+i,0,:], linestyle='dashed')
-        #plt.savefig('teste.png')
 
+        #positions
+        idx_positions = np.asarray([ [i*6+3, i*6+4, i*6+5] for i in range(n_joints) ]).flatten()
+        idx_rotations = np.asarray([ [i*6, i*6+1, i*6+2] for i in range(n_joints) ]).flatten()
+        sample, sample_rot = sample[..., idx_positions], sample[..., idx_rotations]
+        sample = sample.view(sample.shape[:-1] + (-1, 3))                           # [num_samples(bs), 1, chunk_len, n_joints/3, 3]
+        sample = sample.view(-1, *sample.shape[2:]).permute(0, 2, 3, 1)             # [num_samples(bs), n_joints/3, 3, chunk_len]
+
+        #rotations
+        sample_rot = sample_rot.view(sample_rot.shape[:-1] + (-1, 3))
+        sample_rot = sample_rot.view(-1, *sample_rot.shape[2:]).permute(0, 2, 3, 1)
+        rot2xyz_pose_rep = 'xyz'
+
+        #ground_truth
+        gt_motion = data.dataset.inv_transform(gt_motion.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
+        gt_motion = gt_motion[..., idx_rotations]
+        gt_motion = gt_motion.view(gt_motion.shape[:-1] + (-1, 3))
+        gt_motion = gt_motion.view(-1, *gt_motion.shape[2:]).permute(0, 2, 3, 1)
+            
+        rot2xyz_mask = None if rot2xyz_pose_rep == 'xyz' else model_kwargs['y']['mask'].reshape(args.batch_size, n_frames).bool()
+        sample = model.rot2xyz(x=sample, mask=rot2xyz_mask, pose_rep=rot2xyz_pose_rep, glob=True, translation=True,
+                               jointstype='smpl', vertstrans=True, betas=None, beta=0, glob_rot=None,
+                               get_rotations_back=False)
+
+        text_key = 'text' if 'text' in model_kwargs['y'] else 'action_text'
+        all_text += model_kwargs['y'][text_key]
+            
+        all_audios.append(model_kwargs['y']['audio'].cpu().numpy())
+        all_motions.append(sample.cpu().numpy())
+        all_motions_rot.append(sample_rot.cpu().numpy())
+        all_lengths.append(model_kwargs['y']['lengths'].cpu().numpy())
+        all_gt_motions_rot.append(gt_motion.cpu().numpy())
+        print(len(all_audios))
+        print(len(all_motions))
+        print(len(all_motions_rot))
+        print(len(all_gt_motions_rot))
+
+        print(all_audios[-1].shape)
+        print(all_motions[-1].shape)
+        print(all_motions_rot[-1].shape)
+        print(all_gt_motions_rot[-1].shape)
         
-        if model.data_rep == 'genea_vec':
-            n_joints = 83
-            sample = data.dataset.inv_transform(sample.cpu().permute(0, 2, 3, 1)).float()
-            idx_positions = np.asarray([ [i*6+3, i*6+4, i*6+5] for i in range(n_joints) ]).flatten()
-            idx_rotations = np.asarray([ [i*6, i*6+1, i*6+2] for i in range(n_joints) ]).flatten()
-            sample, sample_rot = sample[..., idx_positions], sample[..., idx_rotations]
-            #position
-            sample = sample.view(sample.shape[:-1] + (-1, 3))
-            sample = sample.view(-1, *sample.shape[2:]).permute(0, 2, 3, 1)
-            motions.append(sample.cpu().numpy().reshape( n_joints, 3, -1 ))
-            #rotations
-            sample_rot = sample_rot.view(sample_rot.shape[:-1] + (-1, 3))
-            sample_rot = sample_rot.view(-1, *sample_rot.shape[2:]).permute(0, 2, 3, 1)
-            motions_rot.append(sample_rot.cpu().numpy().reshape( n_joints, 3, -1 ))
-            #ground truth
-            gt_motion = data.dataset.inv_transform(gt_motion.cpu().permute(0, 2, 3, 1))
-            gt_motion = gt_motion[..., idx_rotations]
-            gt_motion = gt_motion.view(gt_motion.shape[:-1] + (-1, 3))
-            gt_motion = gt_motion.view(-1, *gt_motion.shape[2:]).numpy()
-            gt_motions_rot.append(gt_motion.reshape( -1, n_joints, 3 ))
-        else:
-            raise NotImplementedError
 
-        all_text += model_kwargs['y']['text']
-        audios.append(model_kwargs['y']['audio'].cpu().numpy().reshape(-1))
-        all_lengths.append(gt_motion.shape[0])
 
-    #audios = np.concatenate(audios, axis = 0)
-    #motions = np.concatenate(motions, axis = 0)
-    #motions_rot = np.concatenate(motions_rot, axis = 0)
-    #gt_motions_rot = np.concatenate(gt_motions_rot, axis = 0)
-  
+    all_audios = np.concatenate(all_audios, axis=1)
+    print(all_audios.shape)
+    all_motions = np.concatenate(all_motions, axis=3)
+    all_motions = all_motions[:total_num_samples]  # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
+    all_motions_rot = np.concatenate(all_motions_rot, axis=3)
+    print(all_motions_rot.shape)
+    all_motions_rot = all_motions_rot[:total_num_samples]  # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
+    all_text = all_text[:total_num_samples]
+    all_lengths = np.concatenate(all_lengths, axis=0)[:total_num_samples]
+    all_gt_motions_rot = np.concatenate(all_gt_motions_rot, axis=3) # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
+    print(all_gt_motions_rot.shape) 
+    
+    #gt_motion = data.dataset.inv_transform(gt_motion.cpu().permute(0, 2, 3, 1))
+    #gt_motion = gt_motion[..., idx_rotations]
+    #gt_motion = gt_motion.view(gt_motion.shape[:-1] + (-1, 3))
+    #gt_motion = gt_motion.view(-1, *gt_motion.shape[2:]).numpy()
+    
+
     if os.path.exists(out_path):
         shutil.rmtree(out_path)
     os.makedirs(out_path)
@@ -153,8 +194,8 @@ def main():
     npy_path = os.path.join(out_path, 'results.npy')
     print(f"saving results file to [{npy_path}]")
     np.save(npy_path,
-            {'motion': motions, 'text': all_text, 'lengths': all_lengths,
-             'takes_generated': takes_to_generate})
+            {'motion': all_motions, 'text': all_text, 'lengths': all_lengths,
+             'num_samples': len(takes_to_generate), 'num_chunks': chunks_per_take})
     with open(npy_path.replace('.npy', '.txt'), 'w') as fw:
         fw.write('\n'.join(all_text))
     with open(npy_path.replace('.npy', '_len.txt'), 'w') as fw:
@@ -169,45 +210,47 @@ def main():
     sample_files = []
     num_samples_in_out_file = 7
 
-    #sample_print_template, row_print_template, all_print_template, \
-    #sample_file_template, row_file_template, all_file_template = construct_template_variables()
+    sample_print_template, row_print_template, all_print_template, \
+    sample_file_template, row_file_template, all_file_template = construct_template_variables()
 
 
-    for sample_i in range(len(takes_to_generate)):
-        save_file = data.dataset.takes[takes_to_generate[sample_i]][0]
-        print('Saving sample {}: {}'.format(sample_i, save_file))
+    for i, take in enumerate(takes_to_generate):
+        save_file = data.dataset.takes[take][0]
+        print('Saving take {}: {}'.format(i, save_file))
         animation_save_path = os.path.join(out_path, save_file)
-
         caption = '' # since we are generating a ~1 min long take the caption would be too long
-        motion = motions[sample_i].transpose(2, 0, 1)
-        motion_rot = motions_rot[sample_i].transpose(2, 0, 1)
-        plot_3d_motion(animation_save_path + '.mp4', skeleton, motion, dataset=args.dataset, title=caption, fps=fps)
+        positions = all_motions[i]
+        positions = positions.transpose(2, 0, 1)
+        plot_3d_motion(animation_save_path + '.mp4', skeleton, positions, dataset=args.dataset, title=caption, fps=fps)
         # Credit for visualization: https://github.com/EricGuo5513/text-to-motion
 
         # Saving generated motion as bvh file
-        print('motion shape')
-        print(motion_rot.shape)
-        bvhreference.frames = motion_rot.shape[0]
-        for i, joint in enumerate(bvhreference.getlistofjoints()):
-            joint.rotation = motion_rot[:, i, :]
+        rotations = all_motions_rot[i] # [njoints/3, 3, chunk_len*chunks]
+        rotations = rotations.transpose(2, 0, 1) # [chunk_len*chunks, njoints/3, 3]
+        bvhreference.frames = rotations.shape[0]
+        for j, joint in enumerate(bvhreference.getlistofjoints()):
+            joint.rotation = rotations[:, j, :]
             joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
         print('Saving bvh file...')
         bvhsdk.WriteBVH(bvhreference, path=animation_save_path, name=None, frametime=1/fps, refTPose=False)
 
-        # Saving ground truth motion as bvh file
-        for i, joint in enumerate(bvhreference.getlistofjoints()):
-            joint.rotation = gt_motions_rot[sample_i][:, i, :]
+        # Saving gorund truth motions as bvh file
+        rotations = all_gt_motions_rot[i] # [njoints/3, 3, chunk_len*chunks]
+        rotations = rotations.transpose(2, 0, 1) # [chunk_len*chunks, njoints/3, 3]
+        bvhreference.frames = rotations.shape[0]
+        for j, joint in enumerate(bvhreference.getlistofjoints()):
+            joint.rotation = rotations[:, j, :]
             joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
+        print('Saving bvh file...')
         bvhsdk.WriteBVH(bvhreference, path=animation_save_path + '_gt', name=None, frametime=1/fps, refTPose=False)
 
         # Saving audio and joinning it with the mp4 file of generated motion
         wavfile = animation_save_path + '.wav'
         mp4file = wavfile.replace('.wav', '.mp4')
-        wavwrite( wavfile, samplerate= 22050, data = audios[sample_i])
+        wavwrite( wavfile, samplerate= 22050, data = all_audios[i])
         joinaudio = f'ffmpeg -y -loglevel warning -i {mp4file} -i {wavfile} -c:v copy -map 0:v:0 -map 1:a:0 -c:a aac -b:a 192k {mp4file[:-4]}_audio.mp4'
         os.system(joinaudio)
 
-    ###################################################################
     abs_path = os.path.abspath(out_path)
     print(f'[Done] Results are at [{abs_path}]')
 
@@ -249,9 +292,9 @@ def construct_template_variables():
            sample_file_template, row_file_template, all_file_template
 
 
-def load_dataset(args):
+def load_dataset(args, batch_size):
     data = get_dataset_loader(name=args.dataset,
-                              batch_size=args.batch_size,
+                              batch_size=batch_size,
                               num_frames=args.num_frames,
                               split='val',
                               hml_mode='text_only')

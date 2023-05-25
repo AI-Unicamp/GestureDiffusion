@@ -171,29 +171,29 @@ class MDM(nn.Module):
         #### DENOISE PASS ####
         ######################
 
-        # Data Reshaping (Insert multiple att heads)
+        ## Data Reshaping (Insert multiple att heads)
         xseq = xseq.permute(1, 0, 2)                            # [BS, CHUNK_LEN, LAT_DIM]
         xseq = xseq.view(bs, nframes, self.cl_head, -1)         # [BS, CHUNK_LEN, CL_HEAD, LAT_DIM / CL_HEAD] 
         xseq = xseq.permute(0, 2, 1, 3)                         # [BS, CL_HEAD, CHUNK_LEN, LAT_DIM / CL_HEAD]
         xseq = xseq.reshape(bs*self.cl_head, nframes, -1)       # [BS * CL_HEAD, CHUNK_LEN, LAT_DIM / CL_HEAD]
 
-        # RPE Embeddings
-        pos_emb = self.rel_pos(xseq)                            # [CHUNK_LEN, BS]
-        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # [LAT_DIM, CHUNK_LEN, BS]
+        ## RPE Embeddings
+        pos_emb = self.rel_pos(xseq)                            # [CHUNK_LEN, BS] O CORRETO É [CHUNK_LEN, LAT_DIM / CL_HEAD]
+        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # [LAT_DIM, CHUNK_LEN, BS] O CORRETO É [BS * CL_HEAD, CHUNK_LEN, LAT_DIM / CL_HEAD]
 
-        # Apply Cross Local Attention
+        ## Apply Cross Local Attention
         packed_shape = [torch.Size([bs, self.cl_head])]         # [1] = [torch.Size([BS, CL_HEAD])
         mask_local = torch.ones(bs, nframes).bool().to(device=xseq.device)             # [BS, CHUNK_LEN]
         xseq = self.cross_local_attention(xseq, xseq, xseq,     
             packed_shape=packed_shape, mask=mask_local)         # [BS, CL_HEAD, CHUNK_LEN, LAT_DIM / CL_HEAD]
         
         # Data Reshaping to cat Global Information
-        xseq = xseq.permute(0, 2, 1, 3)  
+        xseq = xseq.permute(0, 2, 1, 3)                         # [BS, CHUNK_LEN, CL_HEAD, LAT_DIM / CL_HEAD]
         xseq = xseq.reshape(bs, nframes, -1)                    # [BS, CHUNK_LEN, LAT_DIM] 
         xseq = xseq.permute(1, 0, 2)                            # [CHUNK_LEN, BS, LAT_DIM] 
 
         # Concat Coarse Grained Embeddings
-        xseq = torch.cat((coa_embs, xseq), axis=0)              # [CHUNK_LEN+1, BS, LAT_DIM]    
+        xseq = torch.cat((coa_embs, xseq), axis=0)              # [CHUNK_LEN+1, BS, LAT_DIM]   
 
         # Data Reshaping (Insert multiple att heads)
         xseq = xseq.permute(1, 0, 2)                            # [BS, CHUNK_LEN+1, LAT_DIM]
@@ -202,12 +202,12 @@ class MDM(nn.Module):
         xseq = xseq.reshape(bs*self.cl_head, nframes + 1, -1)   # [BS * CL_HEAD, CHUNK_LEN+1, LAT_DIM / CL_HEAD]
 
         # RPE Embeddings
-        pos_emb = self.rel_pos(xseq)                            # [CHUNK_LEN+1, BS]
-        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # [LAT_DIM, CHUNK_LEN+1, BS]
+        pos_emb = self.rel_pos(xseq)                            # [CHUNK_LEN+1, BS] O CORRETO É [CHUNK_LEN+1, LAT_DIM / CL_HEAD]
+        xseq, _ = apply_rotary_pos_emb(xseq, xseq, pos_emb)     # [LAT_DIM, CHUNK_LEN+1, BS]  O CORRETO É [BS * CL_HEAD, CHUNK_LEN+1, LAT_DIM / CL_HEAD]
 
         # Data Reshaping
         xseq_rpe = xseq.reshape(bs,self.cl_head,nframes+1,-1)   # [BS, CL_HEAD, CHUNK_LEN+1, LAT_DIM / CL_HEAD]
-        xseq = xseq_rpe.permute(0, 2, 1, 3)                     # [BS, CHUNK_LEN+1, CL_HEAD, LAT_DIM / CL_HEAD]     
+        xseq = xseq_rpe.permute(0, 2, 1, 3)                     # [BS, CHUNK_LEN+1, CL_HEAD, LAT_DIM / CL_HEAD]   
         xseq = xseq.view(bs, nframes + 1, -1)                   # [BS, CHUNK_LEN+1, LAT_DIM]
         xseq = xseq.permute(1, 0, 2)                            # [CHUNK_LEN+1, BS, LAT_DIM]
 
