@@ -78,7 +78,7 @@ class Genea2023(data.Dataset):
         if sample*self.step - self.n_seed_poses < 0:
             seed_poses = np.zeros((self.n_seed_poses, motion.shape[1]))
         else:
-            seed_poses = (motion_file[sample*self.step - self.n_seed_poses: sample*self.step,:] - self.mean) / self.std
+            seed_poses = (motion_file[sample*self.step: sample*self.step + self.n_seed_poses,:] - self.mean) / self.std
         return motion, seed_poses
 
     def __getaudiofeats(self, file, sample):
