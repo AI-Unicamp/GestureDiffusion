@@ -12,6 +12,7 @@ class MDM(nn.Module):
                   num_layers=8, num_heads=4, dropout=0.1, activation="gelu",
                  dataset='amass', clip_dim=512, clip_version=None, **kargs):
         super().__init__()
+        print('Using MDM V2 (w/ CrossAtt+RPM)')
 
         # General Configs        
         self.dataset = dataset
