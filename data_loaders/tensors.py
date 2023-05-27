@@ -47,8 +47,8 @@ def collate(batch):
         audiobatch = torch.cat(audiobatch, dim=0)
         cond['y'].update({'audio': audiobatch})
     if 'seed' in notnone_batches[0]:
-        seedbatch = [b['seed'] for b in notnone_batches]
-        seedbatch = torch.cat(seedbatch, dim=1)
+        seedbatch = [b['seed'].unsqueeze(0) for b in notnone_batches]
+        seedbatch = torch.cat(seedbatch, dim=0)
         cond['y'].update({'seed': seedbatch})
     return motion, cond
 
