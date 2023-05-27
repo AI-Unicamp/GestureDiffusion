@@ -67,6 +67,9 @@ class MDM_Old(nn.Module):
         self.rot2xyz = Rotation2xyz(device='cpu', dataset=self.dataset)
 
 
+    def parameters_wo_clip(self):
+        return [p for name, p in self.named_parameters() if not name.startswith('clip_model.')]
+    
     def mask_cond(self, cond, force_mask=False):
         bs, d = cond.shape
         if force_mask:
