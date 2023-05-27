@@ -31,7 +31,7 @@ class MDM_Old(nn.Module):
         self.seed_pose_encoder = SeedPoseEncoder(self.njoints, self.seed_poses, self.latent_dim)
 
         # Audio Encoder
-        self.mfcc_dim = 26 if self.mfcc_input else 0
+        self.mfcc_dim = 26
         print('Using Audio Features:')
         print('Selected Features: MFCCs')
 
