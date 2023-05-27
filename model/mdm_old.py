@@ -25,6 +25,7 @@ class MDM_Old(nn.Module):
         self.translation = translation
 
         # Seed Pose Encoder
+        self.cond_mask_prob = kargs.get('cond_mask_prob', 0.)
         self.seed_poses = kargs.get('seed_poses', 0)
         print('Using {} Seed Poses.'.format(self.seed_poses))
         assert self.seed_poses > 0
