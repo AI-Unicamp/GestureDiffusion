@@ -351,7 +351,7 @@ class InputProcess(nn.Module):
         bs, njoints, nfeats, nframes = x.shape
         x = x.permute((3, 0, 1, 2)).reshape(nframes, bs, njoints*nfeats)
 
-        if self.data_rep == 'genea_vec':
+        if self.data_rep in ['genea_vec', 'genea_vec+']:
             x = self.poseEmbedding(x)  # [seqlen, bs, d]
             return x
         else:
@@ -371,7 +371,7 @@ class OutputProcess(nn.Module):
 
     def forward(self, output):
         nframes, bs, d = output.shape
-        if self.data_rep == 'genea_vec':
+        if self.data_rep in ['genea_vec', 'genea_vec+']:
             output = self.poseFinal(output) # [CHUNK_LEN, BS, POSE_DIM]
         else:
             raise NotImplementedError
