@@ -84,6 +84,7 @@ def main():
     all_text = []
     all_audios = []
     all_gt_motions_rot = []
+    all_gt_motions = []
     all_sample_with_seed = []
     all_sample_with_seed_rot = []
 
@@ -98,13 +99,15 @@ def main():
             inputs.append(data.dataset.__getitem__(chunk_index))
 
         gt_motion, model_kwargs = gg_collate(inputs) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
-        model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [njoints, num_samples(bs), seed_len]
+        model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [num_samples(bs), njoints, 1, seed_len]
 
         if chunk == 0: 
             pass #send mean pose
         else:
-            model_kwargs['y']['seed'] = sample_out.permute(2, 1, 0, 3).squeeze()[...,-args.seed_poses:]
-        
+            model_kwargs['y']['seed'] = sample_out[...,-args.seed_poses:]
+            
+
+
         print('### Sampling chunk {} of {}'.format(chunk+1, chunks_per_take))
 
         # add CFG scale to batch
@@ -128,8 +131,8 @@ def main():
 
         sample = data.dataset.inv_transform(sample_out.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
         
-        sample_with_seed = data.dataset.inv_transform(model_kwargs['y']['seed'].cpu().permute(1, 2, 0).unsqueeze(1)).float()
-        sample_with_seed = torch.cat([sample_with_seed, sample], dim=2) ## [num_samples(bs), 1, chunk_len, njoints]
+        #sample_with_seed = data.dataset.inv_transform(model_kwargs['y']['seed'].cpu().permute(1, 2, 0).unsqueeze(1)).float()
+        #sample_with_seed = torch.cat([sample_with_seed, sample], dim=2) ## [num_samples(bs), 1, chunk_len, njoints]
 
         #positions
         idx_positions = np.asarray([ [i*6+3, i*6+4, i*6+5] for i in range(n_joints) ]).flatten()
@@ -145,17 +148,20 @@ def main():
 
         #ground_truth
         gt_motion = data.dataset.inv_transform(gt_motion.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
-        gt_motion = gt_motion[..., idx_rotations]
-        gt_motion = gt_motion.view(gt_motion.shape[:-1] + (-1, 3))
-        gt_motion = gt_motion.view(-1, *gt_motion.shape[2:]).permute(0, 2, 3, 1)
+        gt_motion_pos, gt_motion_rot = gt_motion[..., idx_positions], gt_motion[..., idx_rotations]
+        gt_motion_rot = gt_motion_rot.view(gt_motion_rot.shape[:-1] + (-1, 3))
+        gt_motion_rot = gt_motion_rot.view(-1, *gt_motion_rot.shape[2:]).permute(0, 2, 3, 1)
+
+        gt_motion_pos = gt_motion_pos.view(gt_motion_pos.shape[:-1] + (-1, 3))
+        gt_motion_pos = gt_motion_pos.view(-1, *gt_motion_pos.shape[2:]).permute(0, 2, 3, 1)
 
         #sample with seed
-        sample_with_seed_pos, sample_with_seed_rot = sample_with_seed[..., idx_positions], sample_with_seed[..., idx_rotations]
-        sample_with_seed_pos = sample_with_seed_pos.view(sample_with_seed_pos.shape[:-1] + (-1, 3))
-        sample_with_seed_pos = sample_with_seed_pos.view(-1, *sample_with_seed_pos.shape[2:]).permute(0, 2, 3, 1)
+        #sample_with_seed_pos, sample_with_seed_rot = sample_with_seed[..., idx_positions], sample_with_seed[..., idx_rotations]
+        #sample_with_seed_pos = sample_with_seed_pos.view(sample_with_seed_pos.shape[:-1] + (-1, 3))
+        #sample_with_seed_pos = sample_with_seed_pos.view(-1, *sample_with_seed_pos.shape[2:]).permute(0, 2, 3, 1)
 
-        sample_with_seed_rot = sample_with_seed_rot.view(sample_with_seed_rot.shape[:-1] + (-1, 3))
-        sample_with_seed_rot = sample_with_seed_rot.view(-1, *sample_with_seed_rot.shape[2:]).permute(0, 2, 3, 1)
+        #sample_with_seed_rot = sample_with_seed_rot.view(sample_with_seed_rot.shape[:-1] + (-1, 3))
+        #sample_with_seed_rot = sample_with_seed_rot.view(-1, *sample_with_seed_rot.shape[2:]).permute(0, 2, 3, 1)
             
         rot2xyz_mask = None if rot2xyz_pose_rep == 'xyz' else model_kwargs['y']['mask'].reshape(args.batch_size, n_frames).bool()
         sample = model.rot2xyz(x=sample, mask=rot2xyz_mask, pose_rep=rot2xyz_pose_rep, glob=True, translation=True,
@@ -169,10 +175,11 @@ def main():
         all_motions.append(sample.cpu().numpy())
         all_motions_rot.append(sample_rot.cpu().numpy())
         all_lengths.append(model_kwargs['y']['lengths'].cpu().numpy())
-        all_gt_motions_rot.append(gt_motion.cpu().numpy())
+        all_gt_motions_rot.append(gt_motion_rot.cpu().numpy())
+        all_gt_motions.append(gt_motion_pos.cpu().numpy())
 
-        all_sample_with_seed.append(sample_with_seed_pos.cpu().numpy())
-        all_sample_with_seed_rot.append(sample_with_seed_rot.cpu().numpy())
+        #all_sample_with_seed.append(sample_with_seed_pos.cpu().numpy())
+        #all_sample_with_seed_rot.append(sample_with_seed_rot.cpu().numpy())
 
 
     all_audios = np.concatenate(all_audios, axis=1)
@@ -183,9 +190,10 @@ def main():
     all_text = all_text[:total_num_samples]
     all_lengths = np.concatenate(all_lengths, axis=0)[:total_num_samples]
     all_gt_motions_rot = np.concatenate(all_gt_motions_rot, axis=3) # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
+    all_gt_motions = np.concatenate(all_gt_motions, axis=3)
 
-    all_sample_with_seed = np.concatenate(all_sample_with_seed, axis=3)
-    all_sample_with_seed_rot = np.concatenate(all_sample_with_seed_rot, axis=3)
+    #all_sample_with_seed = np.concatenate(all_sample_with_seed, axis=3)
+    #all_sample_with_seed_rot = np.concatenate(all_sample_with_seed_rot, axis=3)
     
     #gt_motion = data.dataset.inv_transform(gt_motion.cpu().permute(0, 2, 3, 1))
     #gt_motion = gt_motion[..., idx_rotations]
@@ -231,9 +239,9 @@ def main():
         # Credit for visualization: https://github.com/EricGuo5513/text-to-motion
 
         #saving samples with seed
-        aux_positions = all_sample_with_seed[i]
-        aux_positions = aux_positions.transpose(2, 0, 1)
-        plot_3d_motion(animation_save_path + '_with_seed.mp4', skeleton, aux_positions, dataset=args.dataset, title=caption, fps=fps)
+        #aux_positions = all_sample_with_seed[i]
+        #aux_positions = aux_positions.transpose(2, 0, 1)
+        #plot_3d_motion(animation_save_path + '_with_seed.mp4', skeleton, aux_positions, dataset=args.dataset, title=caption, fps=fps)
 
         # Saving generated motion as bvh file
         rotations = all_motions_rot[i] # [njoints/3, 3, chunk_len*chunks]
@@ -242,28 +250,48 @@ def main():
         for j, joint in enumerate(bvhreference.getlistofjoints()):
             joint.rotation = rotations[:, j, :]
             joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
+        bvhreference.root.translation = positions[:, 0, :]
+        #bvhreference.root.children[0].translation = positions[:, 1, :]
         print('Saving bvh file...')
         bvhsdk.WriteBVH(bvhreference, path=animation_save_path, name=None, frametime=1/fps, refTPose=False)
 
         # Saving gorund truth motions as bvh file
         rotations = all_gt_motions_rot[i] # [njoints/3, 3, chunk_len*chunks]
         rotations = rotations.transpose(2, 0, 1) # [chunk_len*chunks, njoints/3, 3]
+        positions = all_gt_motions[i]
+        positions = positions.transpose(2, 0, 1)
         bvhreference.frames = rotations.shape[0]
         for j, joint in enumerate(bvhreference.getlistofjoints()):
             joint.rotation = rotations[:, j, :]
             joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
+        bvhreference.root.translation = positions[:, 0, :]
+        #bvhreference.root.children[0].translation = positions[:, 1, :]
+        # Move the ground truth motion to the position of the interlocutor
+        # We are doing this to compare the generated motion with the ground truth motion using the oficial genea visualization
+        # Get rotation matrix to be performed
+        matrix = bvhsdk.mathutils.matrixRotation(180, y=1, shape=4)
+        # Get joint's current global rotation matrix
+        transmat = np.array([bvhreference.root.children[0].getGlobalTransform(i) for i in range(bvhreference.frames) ])
+        # Apply rotation
+        newmat = np.array([np.dot(matrix, transmat[i]) for i in range(bvhreference.frames)])
+        # Get new local euler angles
+        bvhreference.root.children[0].rotation = np.array([bvhsdk.mathutils.eulerFromMatrix(newmat[i], bvhreference.root.children[0].order)[0] for i in range(bvhreference.frames)])
+        # Adjust root position
+        hips_height =  np.asarray([0,91.5,0])
+        distance = np.array([0,0,150])
+        bvhreference.root.translation = np.array([newmat[i][:,-1][:-1] -hips_height + distance for i in range(bvhreference.frames)])
         print('Saving bvh file...')
         bvhsdk.WriteBVH(bvhreference, path=animation_save_path + '_gt', name=None, frametime=1/fps, refTPose=False)
 
         # Saving sample with seed as bvh file
-        rotations = all_sample_with_seed_rot[i] # [njoints/3, 3, chunk_len*chunks]
-        rotations = rotations.transpose(2, 0, 1) # [chunk_len*chunks, njoints/3, 3]
-        bvhreference.frames = rotations.shape[0]
-        for j, joint in enumerate(bvhreference.getlistofjoints()):
-            joint.rotation = rotations[:, j, :]
-            joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
-        print('Saving bvh file...')
-        bvhsdk.WriteBVH(bvhreference, path=animation_save_path + '_with_seed', name=None, frametime=1/fps, refTPose=False)
+        #rotations = all_sample_with_seed_rot[i] # [njoints/3, 3, chunk_len*chunks]
+        #rotations = rotations.transpose(2, 0, 1) # [chunk_len*chunks, njoints/3, 3]
+        #bvhreference.frames = rotations.shape[0]
+        #for j, joint in enumerate(bvhreference.getlistofjoints()):
+        #    joint.rotation = rotations[:, j, :]
+        #    joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
+        #print('Saving bvh file...')
+        #bvhsdk.WriteBVH(bvhreference, path=animation_save_path + '_with_seed', name=None, frametime=1/fps, refTPose=False)
 
         # Saving audio and joinning it with the mp4 file of generated motion
         wavfile = animation_save_path + '.wav'
