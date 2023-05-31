@@ -1,6 +1,6 @@
 from torch.utils.data import DataLoader
 from data_loaders.tensors import collate as all_collate
-from data_loaders.tensors import gg_collate, gg_collate_p
+from data_loaders.tensors import gg_collate
 
 def get_dataset_class(name):
     if name in ["genea2023", "genea2023+"]:

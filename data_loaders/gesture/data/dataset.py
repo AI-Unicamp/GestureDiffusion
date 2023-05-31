@@ -142,7 +142,12 @@ class Genea2023(data.Dataset):
                 return i if (frame > text[i-1][1] or i==0) else i-1
     
     def inv_transform(self, data):
-        return data * self.std + self.mean
+        if self.name == 'genea2023':
+            return data * self.std + self.mean
+        elif self.name == 'genea2023+':
+            return data * np.concatenate((self.rot6dpos_std, self.vel_std)) + np.concatenate((self.rot6dpos_mean, self.vel_mean))
+        else:
+            raise ValueError('Dataset name not recognized')
 
 
     def gettime(self):
