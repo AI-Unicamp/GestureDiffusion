@@ -13,8 +13,7 @@ def get_collate_fn(name, hml_mode='train'):
     if name in ["genea2023", "genea2023+"]:
         return gg_collate
     else:
-        #return all_collate
-        raise ValueError('MANO CHECA ISSO AQUI PQ TA MEI ESTRANHO NAO ERA PRA PASSAR AQUI')
+        raise ValueError(f'Unsupported dataset name [{name}]')
 
 def get_dataset(name, num_frames, seed_poses, split='train', hml_mode='train'):
     DATA = get_dataset_class(name)
@@ -29,7 +28,7 @@ def get_dataset_loader(name, batch_size, num_frames, split='train', hml_mode='tr
     shuffled = True if split == 'train' else False
     loader = DataLoader(
         dataset, batch_size=batch_size, shuffle=shuffled,
-        num_workers=8, drop_last=True, collate_fn=collate
+        num_workers=1, drop_last=True, collate_fn=collate
     )
 
     return loader
