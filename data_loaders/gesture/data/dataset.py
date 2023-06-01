@@ -11,13 +11,13 @@ class Genea2023(data.Dataset):
 
         if split=='train':
             srcpath = os.path.join(datapath, 'trn/main-agent/')
-            self.step = step
+            
         elif split in ['val']:
             srcpath = os.path.join(datapath, 'val/main-agent/')
-            self.step = window
         else:
             raise NotImplementedError
         self.name = name
+        self.step = step
 
         self.datapath = datapath
         self.window=window
@@ -78,13 +78,18 @@ class Genea2023(data.Dataset):
             # loading rot6d and position representations
             rot6dpos_file = np.load(os.path.join(self.motionpath_rot6d,self.takes[file][0]+'.npy'))
             rot6dpos = (rot6dpos_file[sample*self.step: sample*self.step + self.window,:] - self.rot6dpos_mean) / self.rot6dpos_std
-            rot6dpos_seed = (rot6dpos_file[sample*self.step: sample*self.step + self.n_seed_poses,:] - self.rot6dpos_mean) / self.rot6dpos_std
+            
             # loading rotpos representation and computing velocity
             rotpos_file = np.load(os.path.join(self.motionpath,self.takes[file][0]+'.npy'))
             rotpos_file[1:,:] = rotpos_file[1:,:] - rotpos_file[:-1,:]
             rotpos_file[0,:] = np.zeros(rotpos_file.shape[1])
             rotpos = (rotpos_file[sample*self.step: sample*self.step + self.window,:] - self.vel_mean) / self.vel_std
-            rotpos_seed = (rotpos_file[sample*self.step: sample*self.step + self.n_seed_poses,:] - self.vel_mean) / self.vel_std
+            if sample*self.step - self.n_seed_poses < 0:    
+                rot6dpos_seed = np.zeros((self.n_seed_poses, rot6dpos.shape[1]))
+                rotpos_seed = np.zeros((self.n_seed_poses, rotpos.shape[1]))
+            else:
+                rot6dpos_seed = (rot6dpos_file[sample*self.step - self.n_seed_poses: sample*self.step ,:] - self.rot6dpos_mean) / self.rot6dpos_std
+                rotpos_seed = (rotpos_file[sample*self.step - self.n_seed_poses: sample*self.step,:] - self.vel_mean) / self.vel_std
 
             motion = np.concatenate((rot6dpos, rotpos), axis=1)
             seed_poses = np.concatenate((rot6dpos_seed, rotpos_seed), axis=1)
@@ -92,16 +97,17 @@ class Genea2023(data.Dataset):
         else:
             motion_file = np.load(os.path.join(self.motionpath,self.takes[file][0]+'.npy'))
             motion = (motion_file[sample*self.step: sample*self.step + self.window,:] - self.mean) / self.std
-            seed_poses = (motion_file[sample*self.step: sample*self.step + self.n_seed_poses,:] - self.mean) / self.std
+            if sample*self.step - self.n_seed_poses < 0:
+                seed_poses = np.zeros((self.n_seed_poses, motion.shape[1]))
+            else:
+                seed_poses = (motion_file[sample*self.step - self.n_seed_poses: sample*self.step,:] - self.mean) / self.std    
+            
         return motion, seed_poses
     
     def __oldgetmotion(self, file, sample):
         motion_file = np.load(os.path.join(self.motionpath,self.takes[file][0]+'.npy'))
         motion = (motion_file[sample*self.step: sample*self.step + self.window,:] - self.mean) / self.std
-        if sample*self.step - self.n_seed_poses < 0:
-            seed_poses = np.zeros((self.n_seed_poses, motion.shape[1]))
-        else:
-            seed_poses = (motion_file[sample*self.step - self.n_seed_poses: sample*self.step,:] - self.mean) / self.std
+        seed_poses = (motion_file[sample*self.step: sample*self.step + self.n_seed_poses,:] - self.mean) / self.std
         return motion, seed_poses
 
     def __getaudiofeats(self, file, sample):

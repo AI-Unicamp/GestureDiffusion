@@ -15,20 +15,20 @@ def get_collate_fn(name, hml_mode='train'):
     else:
         raise ValueError(f'Unsupported dataset name [{name}]')
 
-def get_dataset(name, num_frames, seed_poses, split='train', hml_mode='train'):
+def get_dataset(name, num_frames, seed_poses, step, split='train', hml_mode='train'):
     DATA = get_dataset_class(name)
-    dataset = DATA(name=name, split=split, window=num_frames, n_seed_poses=seed_poses)
+    dataset = DATA(name=name, split=split, window=num_frames, n_seed_poses=seed_poses, step=step)
     return dataset
 
 
-def get_dataset_loader(name, batch_size, num_frames, split='train', hml_mode='train', seed_poses=10):
-    dataset = get_dataset(name, num_frames, seed_poses, split, hml_mode)
+def get_dataset_loader(name, batch_size, num_frames, step, split='train', hml_mode='train', seed_poses=10):
+    dataset = get_dataset(name, num_frames, seed_poses, step, split, hml_mode)
     collate = get_collate_fn(name, hml_mode)
     
     shuffled = True if split == 'train' else False
     loader = DataLoader(
         dataset, batch_size=batch_size, shuffle=shuffled,
-        num_workers=1, drop_last=True, collate_fn=collate
+        num_workers=16, drop_last=True, collate_fn=collate
     )
 
     return loader

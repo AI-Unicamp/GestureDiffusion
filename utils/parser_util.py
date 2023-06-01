@@ -55,7 +55,7 @@ def add_base_options(parser):
     group.add_argument("--cuda", default=True, type=bool, help="Use cuda device, otherwise use CPU.")
     group.add_argument("--device", default=0, type=int, help="Device id to use.")
     group.add_argument("--seed", default=10, type=int, help="For fixing random seed.")
-    group.add_argument("--batch_size", default=256, type=int, help="Batch size during training.")
+    group.add_argument("--batch_size", default=64, type=int, help="Batch size during training.")
 
 
 def add_diffusion_options(parser):
@@ -103,7 +103,9 @@ def add_data_options(parser):
     group.add_argument("--data_dir", default="", type=str,
                        help="If empty, will use defaults according to the specified dataset.")
     group.add_argument("--num_frames", default=120, type=int,
-                       help="Limit for the maximal number of frames. In HumanML3D and KIT this field is ignored.")
+                       help="Window length to be used in the dataset.")
+    group.add_argument("--step", default=30, type=int,
+                       help="Step taken to get next window in the take (overlap between successive samples is equal to num_frames - step).")
 
 
 def add_training_options(parser):

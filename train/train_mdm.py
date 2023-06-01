@@ -33,7 +33,7 @@ def main():
     dist_util.setup_dist(args.device)
 
     print("creating data loader...")
-    data = get_dataset_loader(name=args.dataset, batch_size=args.batch_size, num_frames=args.num_frames)
+    data = get_dataset_loader(name=args.dataset, batch_size=args.batch_size, num_frames=args.num_frames, step=args.step)
 
     print("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(args, data)
