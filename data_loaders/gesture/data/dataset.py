@@ -137,7 +137,7 @@ class Genea2023(data.Dataset):
                 if self.wavlm_cfg.normalize:
                     wav = torch.nn.functional.layer_norm(wav , wav.shape)      #  [1, AUDIO_LEN]
                 reps = self.wavlm.extract_features(wav)[0]                     #  [1, CONVS_OUT_DIM , 768], CONVS_OUT_DIM for 4 seconds of 16khz audio is 199
-                interp_reps = F.interpolate(reps.transpose(1, 2), size=self.window, align_corners=True, mode='linear').unsqueeze(0) # should be [1, 768, 1, CHUNK_LEN]
+                interp_reps = F.interpolate(reps.transpose(1, 2), size=self.window, align_corners=True, mode='linear').unsqueeze(2) # should be [1, 768, 1, CHUNK_LEN]
             return signal, interp_reps.cpu().detach().data.cpu().numpy()
         else:
             # MFCCs
