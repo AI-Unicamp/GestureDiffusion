@@ -21,8 +21,8 @@ def get_dataset(name, num_frames, seed_poses, step, split='train', hml_mode='tra
     return dataset
 
 
-def get_dataset_loader(name, batch_size, num_frames, step, split='train', hml_mode='train', seed_poses=10):
-    dataset = get_dataset(name, num_frames, seed_poses, step, split, hml_mode)
+def get_dataset_loader(name, batch_size, num_frames, step, use_wavlm, split='train', hml_mode='train', seed_poses=10):
+    dataset = get_dataset(name, num_frames, seed_poses, step, split, hml_mode, use_wavlm)
     collate = get_collate_fn(name, hml_mode)
     
     shuffled = True if split == 'train' else False

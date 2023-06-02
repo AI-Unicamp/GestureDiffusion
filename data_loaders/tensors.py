@@ -38,10 +38,10 @@ def collate(batch):
     if 'text' in notnone_batches[0]:
         textbatch = [b['text'] for b in notnone_batches]
         cond['y'].update({'text': textbatch})
-    if 'mfcc' in notnone_batches[0]:
-        mfccbatch = [b['mfcc'] for b in notnone_batches]
-        mfccbatch = torch.cat(mfccbatch, dim=0)
-        cond['y'].update({'mfcc': mfccbatch})
+    if 'audio_rep' in notnone_batches[0]:
+        audio_repbatch = [b['audio_rep'] for b in notnone_batches]
+        audio_repbatch = torch.cat(audio_repbatch, dim=0)
+        cond['y'].update({'audio_rep': audio_repbatch})
     if 'audio' in notnone_batches[0]:
         audiobatch = [b['audio'] for b in notnone_batches]
         audiobatch = torch.cat(audiobatch, dim=0)
@@ -60,7 +60,7 @@ def gg_collate(batch):
         'text': b[1], #b[0]['caption']
         'lengths': b[2],
         'audio': torch.tensor(b[3]).unsqueeze(0), # [seqlen] -> [1, seqlen]
-        'mfcc': torch.tensor(b[4].T).float().unsqueeze(1).unsqueeze(0), # [seqlen, mfcc] -> [mfcc, 1, seqlen]
+        'audio_rep': torch.from_numpy(b[4]).float(),      # [1, AUDIO_HID_DIM, 1, CHUNK_LEN] , (AUDIO_HID_DIM = MFCC_DIM or 768)
         'seed': torch.tensor(b[5].T).float().unsqueeze(1), # [n_seed_poses, J] -> [J, 1, n_seed_poses]
     } for b in batch]
     return collate(adapted_batch)

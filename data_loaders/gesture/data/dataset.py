@@ -5,9 +5,11 @@ import os
 import numpy as np
 from python_speech_features import mfcc
 import librosa
+from WavLM import WavLM, WavLMConfig
+import torch.nn.functional as F
 
 class Genea2023(data.Dataset):
-    def __init__(self, name, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10):
+    def __init__(self, name, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False):
 
         if split=='train':
             srcpath = os.path.join(datapath, 'trn/main-agent/')
@@ -39,6 +41,15 @@ class Genea2023(data.Dataset):
         self.samples_cumulative = [np.sum(self.samples_per_file[:i+1]) for i in range(len(self.samples_per_file))]
         self.length = self.samples_cumulative[-1]
    
+        self.use_wavlm = use_wavlm
+        if self.use_wavlm:
+            checkpoint = torch.load('./wavlm/WavLM-Large.pt')
+            self.wavlm_cfg = WavLMConfig(checkpoint['cfg'])
+            self.wavlm = WavLM(self.wavlm_cfg)
+            self.wavlm.load_state_dict(checkpoint['model'])
+            self.wavlm.eval()
+            print('Selected Features: WavLM Representations')
+
         with open(os.path.join(srcpath, '../metadata.csv')) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
             self.takes = [take for take in reader]
@@ -66,9 +77,9 @@ class Genea2023(data.Dataset):
             sample = idx
         take_name = self.takes[file_idx][0]
         motion, seed_poses = self.__getmotion( file_idx, sample)
-        audio, mfcc = self.__getaudiofeats(file_idx, sample)
+        audio, audio_rep = self.__getaudiofeats(file_idx, sample)
         n_text, text, tokens = self.__gettext(file_idx, sample)
-        return motion, text, self.window, audio, mfcc, seed_poses
+        return motion, text, self.window, audio, audio_rep, seed_poses
 
     def __len__(self):
         return self.length
@@ -119,12 +130,27 @@ class Genea2023(data.Dataset):
         i = sample*self.sr*self.step/self.fps
         signal = signal[ int(i) : int(i+self.window*self.sr/self.fps) ]
 
-        # MFCCs
-        mfcc_vectors = mfcc(signal, winlen=0.06, winstep= (1/self.fps), samplerate=self.sr, numcep=27, nfft=5000)
+        # WavLM Representations
+        if self.use_wavlm:
+            with torch.no_grad():
+                wav = torch.tensor(signal).unsqueeze(0)                        # [1, AUDIO_LEN]
+                if self.wavlm_cfg.normalize:
+                    wav = torch.nn.functional.layer_norm(wav , wav.shape)      #  [1, AUDIO_LEN]
+                reps = self.wavlm.extract_features(wav)[0]                     #  [1, CONVS_OUT_DIM , 768], CONVS_OUT_DIM for 4 seconds of 16khz audio is 199
+                interp_reps = F.interpolate(reps.transpose(1, 2), size=self.window, align_corners=True, mode='linear').unsqueeze(0) # should be [1, 768, 1, CHUNK_LEN]
+            return signal, interp_reps.cpu().detach().data.cpu().numpy()
+        else:
+            # MFCCs
+            mfcc_vectors = mfcc(signal, winlen=0.06, winstep= (1/self.fps), samplerate=self.sr, numcep=27, nfft=5000)
 
-        # Normalize
-        mfcc_vectors = (mfcc_vectors - self.mfcc_mean) / self.mfcc_std
-        return signal, mfcc_vectors
+            # Normalize
+            mfcc_vectors = (mfcc_vectors - self.mfcc_mean) / self.mfcc_std
+
+            # Format
+            mfcc_vectors = mfcc_vectors.T
+            mfcc_vectors = np.expand_dims(mfcc_vectors, 1)
+            mfcc_vectors = np.expand_dims(mfcc_vectors, 0)  # should be [1, MFCC_DIM, 1, CHUNK_LEN]
+            return signal, mfcc_vectors
 
     def __gettext(self, file, sample):
         with open(os.path.join(self.textpath, self.takes[file][0]+'.tsv')) as tsv:

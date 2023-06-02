@@ -106,7 +106,8 @@ def add_data_options(parser):
                        help="Window length to be used in the dataset.")
     group.add_argument("--step", default=30, type=int,
                        help="Step taken to get next window in the take (overlap between successive samples is equal to num_frames - step).")
-
+    group.add_argument("--use_wavlm", default=False, type=bool,
+                       help="Use wavlm representations.")
 
 def add_training_options(parser):
     group = parser.add_argument_group('training')

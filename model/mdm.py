@@ -52,6 +52,7 @@ class MDM(nn.Module):
         # Audio Encoder
         self.mfcc_input = kargs.get('mfcc_input', False)
         self.use_wav_enc = kargs.get('use_wav_enc', False)
+        self.use_wavlm = kargs.get('use_wavlm', False)
         print('Using Audio Features:')
         if self.mfcc_input:
             self.mfcc_dim = 26
@@ -62,6 +63,10 @@ class MDM(nn.Module):
             self.audio_feat_dim = self.wav_enc_dim
             print('Selected Features: WavEncoder Representations')
             self.wav_encoder = WavEncoder()
+        if self.use_wavlm:
+            self.wavlm_proj_dim = 64
+            self.audio_feat_dim = self.wavlm_proj_dim
+            self.wavlm_encooder = nn.Linear(768, self.audio_feat_dim)
 
         # Pose Encoder
         self.input_process = InputProcess(self.data_rep, self.input_feats, self.latent_dim)
@@ -131,13 +136,16 @@ class MDM(nn.Module):
 
         # Audio Embeddings
         if self.mfcc_input:                                     # TODO: is it actually the raw mfccs? 
-            emb_audio = y['mfcc']                               # [BS, MFCC_DIM, 1, CHUNK_LEN]
+            emb_audio = y['audio_rep']                          # [BS, MFCC_DIM, 1, CHUNK_LEN]
         elif self.use_wav_enc:
             emb_audio = self.wav_encoder(y['audio'])            # [BS, WAV_ENC_DIM, 1, CHUNK_LEN]
             raise NotImplementedError                           # TODO: Resolve CNNs
+        elif self.use_wavlm:
+            interp_reps = y['audio_rep']                        # [BS, 768, 1, CHUNK_LEN]
+            emb_audio = self.wavlm_encooder(y['audio_rep'])     # [BS, WAVLM_PROJ_DIM, CHUNK_LEN]
         else:
             raise NotImplementedError
-        emb_audio = emb_audio.squeeze(2)                        # [BS, AUDIO_DIM, CHUNK_LEN], (AUDIO_DIM = MFCC_DIM or WAV_ENC_DIM)
+        emb_audio = emb_audio.squeeze(2)                        # [BS, AUDIO_DIM, CHUNK_LEN], (AUDIO_DIM = MFCC_DIM or WAV_ENC_DIM or WAVLM_PROJ_DIM)
         emb_audio = emb_audio.permute((2, 0, 1))                # [CHUNK_LEN, BS, AUDIO_DIM]
 
         # Pose Embeddings
