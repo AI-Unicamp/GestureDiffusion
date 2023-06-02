@@ -384,7 +384,8 @@ def load_dataset(args, batch_size):
                               num_frames=args.num_frames,
                               split='val',
                               hml_mode='text_only',
-                              step = args.num_frames)
+                              step = args.num_frames
+                              use_wavlm=args.use_wavlm)
     #data.fixed_length = n_frames
     return data
 

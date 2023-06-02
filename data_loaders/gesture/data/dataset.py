@@ -13,18 +13,24 @@ class Genea2023(data.Dataset):
 
         if split=='train':
             srcpath = os.path.join(datapath, 'trn/main-agent/')
-            
         elif split in ['val']:
             srcpath = os.path.join(datapath, 'val/main-agent/')
         else:
             raise NotImplementedError
+
+        if use_wavlm:
+            self.sr = 16000
+            self.audiopath = os.path.join(srcpath, 'audio16k_npy')
+        else:
+            self.sr = sr
+            self.audiopath = os.path.join(srcpath, 'audio_npy')
+
         self.name = name
         self.step = step
 
         self.datapath = datapath
         self.window=window
         self.fps = fps
-        self.sr = sr
         self.n_seed_poses = n_seed_poses
 
         self.loadstats(os.path.join(datapath, 'trn/main-agent/'))
@@ -34,7 +40,6 @@ class Genea2023(data.Dataset):
 
         self.motionpath = os.path.join(srcpath, 'motion_npy_rotpos')
         self.motionpath_rot6d = os.path.join(srcpath, 'motion_npy_rot6dpos')
-        self.audiopath = os.path.join(srcpath, 'audio_npy')
         self.textpath = os.path.join(srcpath, 'tsv')
         self.frames = np.load(os.path.join(srcpath, 'rotpos_frames.npy'))
         self.samples_per_file = [int(np.floor( (n - self.window ) / self.step)) for n in self.frames]
