@@ -15,14 +15,14 @@ def get_collate_fn(name, hml_mode='train'):
     else:
         raise ValueError(f'Unsupported dataset name [{name}]')
 
-def get_dataset(name, num_frames, seed_poses, step, split='train', hml_mode='train'):
+def get_dataset(name, num_frames, seed_poses, step, use_wavlm, split='train', hml_mode='train', ):
     DATA = get_dataset_class(name)
-    dataset = DATA(name=name, split=split, window=num_frames, n_seed_poses=seed_poses, step=step)
+    dataset = DATA(name=name, split=split, window=num_frames, n_seed_poses=seed_poses, step=step, use_wavlm=use_wavlm)
     return dataset
 
 
 def get_dataset_loader(name, batch_size, num_frames, step, use_wavlm, split='train', hml_mode='train', seed_poses=10):
-    dataset = get_dataset(name, num_frames, seed_poses, step, split, hml_mode, use_wavlm)
+    dataset = get_dataset(name, num_frames, seed_poses, step, use_wavlm, split, hml_mode)
     collate = get_collate_fn(name, hml_mode)
     
     shuffled = True if split == 'train' else False

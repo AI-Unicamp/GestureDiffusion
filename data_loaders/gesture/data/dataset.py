@@ -5,7 +5,7 @@ import os
 import numpy as np
 from python_speech_features import mfcc
 import librosa
-from WavLM import WavLM, WavLMConfig
+from wavlm.WavLM import WavLM, WavLMConfig
 import torch.nn.functional as F
 
 class Genea2023(data.Dataset):
