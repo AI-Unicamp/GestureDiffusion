@@ -202,17 +202,12 @@ def main():
         text_key = 'text' if 'text' in model_kwargs['y'] else 'action_text'
         all_text += model_kwargs['y'][text_key]
         
-        if newseed and chunk > 0:
-            start = 10
-        else:
-            start = 0
-
-        all_audios.append(model_kwargs['y']['audio'].cpu().numpy()[...,int(start/30)*22050:])
-        all_motions.append(sample.cpu().numpy()[...,start:])
-        all_motions_rot.append(sample_rot.cpu().numpy()[...,start:])
+        all_audios.append(model_kwargs['y']['audio'].cpu().numpy())
+        all_motions.append(sample.cpu().numpy())
+        all_motions_rot.append(sample_rot.cpu().numpy())
         all_lengths.append(model_kwargs['y']['lengths'].cpu().numpy())
-        all_gt_motions_rot.append(gt_motion_rot.cpu().numpy()[...,start:])
-        all_gt_motions.append(gt_motion_pos.cpu().numpy()[...,start:])
+        all_gt_motions_rot.append(gt_motion_rot.cpu().numpy())
+        all_gt_motions.append(gt_motion_pos.cpu().numpy())
 
         #all_sample_with_seed.append(sample_with_seed_pos.cpu().numpy())
         #all_sample_with_seed_rot.append(sample_with_seed_rot.cpu().numpy())
@@ -384,7 +379,7 @@ def load_dataset(args, batch_size):
                               num_frames=args.num_frames,
                               split='val',
                               hml_mode='text_only',
-                              step = args.num_frames
+                              step = args.num_frames,
                               use_wavlm=args.use_wavlm)
     #data.fixed_length = n_frames
     return data
