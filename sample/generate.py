@@ -44,7 +44,7 @@ def main():
 
     # Hard-coded takes to be generated
     takes_to_generate = np.arange(10)
-    chunks_per_take = 14 # TODO: implement for whole take
+    chunks_per_take = 8 # TODO: implement for whole take
     num_samples = len(takes_to_generate)
 
 
@@ -222,6 +222,20 @@ def main():
     all_lengths = np.concatenate(all_lengths, axis=0)[:total_num_samples]
     all_gt_motions_rot = np.concatenate(all_gt_motions_rot, axis=3) # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
     all_gt_motions = np.concatenate(all_gt_motions, axis=3)
+
+    # Smooth chunk transitions
+    inter_range = 10 #interpolation range in frames
+    for transition in np.arange(1, chunks_per_take-1)*args.num_frames:
+        all_motions[..., transition:transition+2] = np.tile(np.expand_dims(all_motions[..., transition]/2 + all_motions[..., transition-1]/2,-1),2)
+        all_motions_rot[..., transition:transition+2] = np.tile(np.expand_dims(all_motions_rot[..., transition]/2 + all_motions_rot[..., transition-1]/2,-1),2)
+        for i, s in enumerate(np.linspace(0, 1, inter_range-1)):
+            forward = transition-inter_range+i
+            backward = transition+inter_range-i
+            all_motions[..., forward] = all_motions[..., forward]*(1-s) + all_motions[:, :, :, transition-1]*s  
+            all_motions[..., backward] = all_motions[..., backward]*(1-s) + all_motions[:, :, :, transition]*s
+            all_motions_rot[..., forward] = all_motions_rot[..., forward]*(1-s) + all_motions_rot[:, :, :, transition-1]*s
+            all_motions_rot[..., backward] = all_motions_rot[..., backward]*(1-s) + all_motions_rot[:, :, :, transition]*s
+            
 
     #all_sample_with_seed = np.concatenate(all_sample_with_seed, axis=3)
     #all_sample_with_seed_rot = np.concatenate(all_sample_with_seed_rot, axis=3)
