@@ -16,6 +16,8 @@ npy_converter.ipynb
 exploring.ipynb
 Debug*.ipynb
 blender*/
+WavLM-Large.pt
+allmotions.npy
 runcontainer.txt
 __MACOSX/
 .vscode/
@@ -149,3 +151,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+generate_wavlm_reps.ipynb
+generate_wavlm_reps.ipynb

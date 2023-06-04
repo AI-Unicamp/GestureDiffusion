@@ -20,6 +20,7 @@ from data_loaders.tensors import gg_collate
 from soundfile import write as wavwrite
 import bvhsdk
 import utils.rotation_conversions as geometry
+from scipy.signal import savgol_filter
 
 def main():
     args = generate_args()
@@ -236,6 +237,8 @@ def main():
             all_motions_rot[..., forward] = all_motions_rot[..., forward]*(1-s) + all_motions_rot[:, :, :, transition-1]*s
             all_motions_rot[..., backward] = all_motions_rot[..., backward]*(1-s) + all_motions_rot[:, :, :, transition]*s
             
+    all_motions = savgol_filter(all_motions, 9, 3, axis=-1)
+    all_motions_rot = savgol_filter(all_motions_rot, 9, 3, axis=-1)
 
     #all_sample_with_seed = np.concatenate(all_sample_with_seed, axis=3)
     #all_sample_with_seed_rot = np.concatenate(all_sample_with_seed_rot, axis=3)
