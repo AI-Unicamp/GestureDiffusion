@@ -25,7 +25,7 @@ def get_model_args(args, data):
         data_rep = 'genea_vec'
         njoints = 498
         nfeats = 1
-    elif args.dataset in ['genea2023+']:
+    elif args.dataset in ['genea2023+', 'geneabeat']:
         data_rep = 'genea_vec+'
         njoints = 1245
         nfeats = 1

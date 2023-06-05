@@ -6,11 +6,14 @@ def get_dataset_class(name):
     if name in ["genea2023", "genea2023+"]:
         from data_loaders.gesture.data.dataset import Genea2023
         return Genea2023
+    if name in ["geneabeat"]:
+        from data_loaders.gesture.data.dataset import GeneaBeat
+        return GeneaBeat
     else:
         raise ValueError(f'Unsupported dataset name [{name}]')
 
 def get_collate_fn(name, hml_mode='train'):
-    if name in ["genea2023", "genea2023+"]:
+    if name in ["genea2023", "genea2023+","geneabeat"]:
         return gg_collate
     else:
         raise ValueError(f'Unsupported dataset name [{name}]')

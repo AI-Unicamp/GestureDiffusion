@@ -28,7 +28,7 @@ def main():
     out_path = args.output_dir
     name = os.path.basename(os.path.dirname(args.model_path))
     niter = os.path.basename(args.model_path).replace('model', '').replace('.pt', '')
-    if args.dataset in ['genea2023', 'genea2023+']:
+    if args.dataset in ['genea2023', 'genea2023+', 'geneabeat']:
         fps = 30
         n_joints = 83
         bvhreference = bvhsdk.ReadFile('./dataset/Genea2023/trn/main-agent/bvh/trn_2023_v0_000_main-agent.bvh', skipmotion=True)
@@ -45,7 +45,7 @@ def main():
 
     # Hard-coded takes to be generated
     takes_to_generate = np.arange(10)
-    chunks_per_take = 8 # TODO: implement for whole take
+    chunks_per_take = 14 # TODO: implement for whole take
     num_samples = len(takes_to_generate)
 
 
@@ -166,7 +166,7 @@ def main():
             #sample_with_seed_rot = sample_with_seed_rot.view(-1, *sample_with_seed_rot.shape[2:]).permute(0, 2, 3, 1)
 
 
-        elif args.dataset == 'genea2023+':
+        elif args.dataset in ['genea2023+', 'geneabeat']:
             idx_rotations = np.asarray([ [i*9, i*9+1, i*9+2, i*9+3, i*9+4, i*9+5] for i in range(n_joints) ]).flatten()
             idx_positions = np.asarray([ [i*9+6, i*9+7, i*9+8] for i in range(n_joints) ]).flatten()
             sample, sample_rot = sample[..., idx_positions], sample[..., idx_rotations] # sample_rot: [num_samples(bs), 1, chunk_len, n_joints*6]
@@ -264,7 +264,7 @@ def main():
         fw.write('\n'.join([str(l) for l in all_lengths]))
 
     print(f"saving visualizations to [{out_path}]...")
-    if args.dataset in ['genea2023+', 'genea2023']:
+    if args.dataset in ['genea2023+', 'genea2023','geneabeat']:
         skeleton = paramUtil.genea2022_kinematic_chain
     else:
         raise NotImplementedError
