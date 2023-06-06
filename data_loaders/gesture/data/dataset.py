@@ -125,6 +125,10 @@ class Genea2023(data.Dataset):
         # Load Audio
         signal = np.load(os.path.join(self.audiopath,self.takes[file][0]+'.npy'))
         
+        # Cut Chunk
+        i = sample*self.sr*self.step/self.fps
+        signal = signal[ int(i) : int(i+self.window*self.sr/self.fps) ]
+
         if self.use_wavlm:
             # Cut Chunk
             representation_file = np.load(os.path.join(self.wavlm_rep_path,self.takes[file][0]+'.npy'))
@@ -137,10 +141,7 @@ class Genea2023(data.Dataset):
             return signal, wavlm_reps
         
         else:     
-            # Cut Chunk
-            i = sample*self.sr*self.step/self.fps
-            signal = signal[ int(i) : int(i+self.window*self.sr/self.fps) ]
-
+            
             # MFCCs
             mfcc_vectors = mfcc(signal, winlen=0.06, winstep= (1/self.fps), samplerate=self.sr, numcep=27, nfft=5000)
 
