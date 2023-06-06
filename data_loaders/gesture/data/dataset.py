@@ -5,7 +5,6 @@ import os
 import numpy as np
 from python_speech_features import mfcc
 import librosa
-from wavlm.WavLM import WavLM, WavLMConfig
 import torch.nn.functional as F
 
 class Genea2023(data.Dataset):
@@ -48,12 +47,7 @@ class Genea2023(data.Dataset):
    
         self.use_wavlm = use_wavlm
         if self.use_wavlm:
-            checkpoint = torch.load('./wavlm/WavLM-Large.pt')
-            self.wavlm_cfg = WavLMConfig(checkpoint['cfg'])
-            self.wavlm = WavLM(self.wavlm_cfg)
-            self.wavlm.load_state_dict(checkpoint['model'])
-            self.wavlm.eval()
-            print('Selected Features: WavLM Representations')
+            self.wavlm_rep_path = os.path.join(srcpath, 'wavlm_representations')
 
         with open(os.path.join(srcpath, '../metadata.csv')) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
@@ -127,24 +121,26 @@ class Genea2023(data.Dataset):
         return motion, seed_poses
 
     def __getaudiofeats(self, file, sample):
+
         # Load Audio
-        #signal, sr = librosa.load(os.path.join(self.audiopath,self.takes[file][0]+'.wav'), mono=True, sr=self.sr)
         signal = np.load(os.path.join(self.audiopath,self.takes[file][0]+'.npy'))
         
-        # Chunk
-        i = sample*self.sr*self.step/self.fps
-        signal = signal[ int(i) : int(i+self.window*self.sr/self.fps) ]
-
-        # WavLM Representations
         if self.use_wavlm:
-            with torch.no_grad():
-                wav = torch.tensor(signal).unsqueeze(0)                        # [1, AUDIO_LEN]
-                if self.wavlm_cfg.normalize:
-                    wav = torch.nn.functional.layer_norm(wav , wav.shape)      #  [1, AUDIO_LEN]
-                reps = self.wavlm.extract_features(wav)[0]                     #  [1, CONVS_OUT_DIM , 768], CONVS_OUT_DIM for 4 seconds of 16khz audio is 199
-                interp_reps = F.interpolate(reps.transpose(1, 2), size=self.window, align_corners=True, mode='linear').unsqueeze(2) # should be [1, 768, 1, CHUNK_LEN]
-            return signal, interp_reps.cpu().detach().data.cpu().numpy()
-        else:
+            # Cut Chunk
+            representation_file = np.load(os.path.join(self.wavlm_rep_path,self.takes[file][0]+'.npy'))
+            wavlm_reps = representation_file[sample*self.step: sample*self.step + self.window,:]            # [CHUNK_LEN, WAVLM_DIM]
+
+            # Reshape
+            wavlm_reps = np.transpose(wavlm_reps, (1,0))                                                    # [WAVLM_DIM, CHUNK_LEN]
+            wavlm_reps = np.expand_dims(wavlm_reps, 1)                                                      # [WAVLM_DIM, 1, CHUNK_LEN]
+            wavlm_reps = np.expand_dims(wavlm_reps, 0)                                                      # [1, WAVLM_DIM, 1, CHUNK_LEN]
+            return signal, wavlm_reps
+        
+        else:     
+            # Cut Chunk
+            i = sample*self.sr*self.step/self.fps
+            signal = signal[ int(i) : int(i+self.window*self.sr/self.fps) ]
+
             # MFCCs
             mfcc_vectors = mfcc(signal, winlen=0.06, winstep= (1/self.fps), samplerate=self.sr, numcep=27, nfft=5000)
 

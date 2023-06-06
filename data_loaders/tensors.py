@@ -56,12 +56,12 @@ def collate(batch):
 def gg_collate(batch):
     # batch.sort(key=lambda x: x[3], reverse=True)
     adapted_batch = [{
-        'inp': torch.tensor(b[0].T).float().unsqueeze(1), # [seqlen, J] -> [J, 1, seqlen]
-        'text': b[1], #b[0]['caption']
+        'inp': torch.tensor(b[0].T).float().unsqueeze(1),   # [seqlen, J] -> [J, 1, seqlen]
+        'text': b[1],                                       #b[0]['caption']
         'lengths': b[2],
-        'audio': torch.tensor(b[3]).unsqueeze(0), # [seqlen] -> [1, seqlen]
-        'audio_rep': torch.from_numpy(b[4]).float(),      # [1, AUDIO_HID_DIM, 1, CHUNK_LEN] , (AUDIO_HID_DIM = MFCC_DIM or 768)
-        'seed': torch.tensor(b[5].T).float().unsqueeze(1), # [n_seed_poses, J] -> [J, 1, n_seed_poses]
+        'audio': torch.tensor(b[3]).unsqueeze(0),           # [seqlen] -> [1, seqlen]
+        'audio_rep': torch.from_numpy(b[4]).float(),        # [1, AUDIO_HID_DIM, 1, CHUNK_LEN] , (AUDIO_HID_DIM = MFCC_DIM or 768)
+        'seed': torch.tensor(b[5].T).float().unsqueeze(1),  # [n_seed_poses, J] -> [J, 1, n_seed_poses]
     } for b in batch]
     return collate(adapted_batch)
 

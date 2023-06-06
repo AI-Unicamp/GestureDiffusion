@@ -66,7 +66,8 @@ class MDM(nn.Module):
         if self.use_wavlm:
             self.wavlm_proj_dim = 64
             self.audio_feat_dim = self.wavlm_proj_dim
-            self.wavlm_encooder = nn.Linear(768, self.audio_feat_dim)
+            self.wavlm_encoder = nn.Linear(768, self.audio_feat_dim)
+            print('Selected Features: WavLM Representations')
 
         # Pose Encoder
         self.input_process = InputProcess(self.data_rep, self.input_feats, self.latent_dim)
@@ -142,7 +143,7 @@ class MDM(nn.Module):
             raise NotImplementedError                           # TODO: Resolve CNNs
         elif self.use_wavlm:
             interp_reps = y['audio_rep']                        # [BS, 768, 1, CHUNK_LEN]
-            emb_audio = self.wavlm_encooder(y['audio_rep'])     # [BS, WAVLM_PROJ_DIM, CHUNK_LEN]
+            emb_audio = self.wavlm_encoder(interp_reps)         # [BS, WAVLM_PROJ_DIM, 1, CHUNK_LEN]
         else:
             raise NotImplementedError
         emb_audio = emb_audio.squeeze(2)                        # [BS, AUDIO_DIM, CHUNK_LEN], (AUDIO_DIM = MFCC_DIM or WAV_ENC_DIM or WAVLM_PROJ_DIM)
