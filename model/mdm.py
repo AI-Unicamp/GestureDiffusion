@@ -143,7 +143,9 @@ class MDM(nn.Module):
             raise NotImplementedError                           # TODO: Resolve CNNs
         elif self.use_wavlm:
             interp_reps = y['audio_rep']                        # [BS, 768, 1, CHUNK_LEN]
-            emb_audio = self.wavlm_encoder(interp_reps)         # [BS, WAVLM_PROJ_DIM, 1, CHUNK_LEN]
+            interp_reps = interp_reps.transpose(0, 3, 2, 1)     # [BS, CHUNK_LEN, 1, 768]
+            emb_audio = self.wavlm_encoder(interp_reps)         # [BS, CHUNK_LEN, 1, WAVLM_PROJ_DIM]
+            emb_audio = emb_audio.transpose(0, 3, 2, 1)         # [BS, WAVLM_PROJ_DIM, 1, CHUNK_LEN]
         else:
             raise NotImplementedError
         emb_audio = emb_audio.squeeze(2)                        # [BS, AUDIO_DIM, CHUNK_LEN], (AUDIO_DIM = MFCC_DIM or WAV_ENC_DIM or WAVLM_PROJ_DIM)
