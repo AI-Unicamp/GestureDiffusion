@@ -51,7 +51,7 @@ def collate(batch):
         seedbatch = torch.cat(seedbatch, dim=0)
         cond['y'].update({'seed': seedbatch})
     if 'vad' in notnone_batches[0]:
-        vadbatch = [b['vad'].unsqueeze(0) for b in notnone_batches]
+        vadbatch = [b['vad'] for b in notnone_batches]
         vadbatch = torch.cat(vadbatch, dim=0)
         cond['y'].update({'vad': vadbatch})
     return motion, cond
