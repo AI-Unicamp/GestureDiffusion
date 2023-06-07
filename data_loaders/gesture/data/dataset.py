@@ -11,10 +11,11 @@ import torch.nn.functional as F
 class Genea2023(data.Dataset):
     def __init__(self, name, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False):
 
-        if split=='train':
+        if split in ['train', 'hands']:
             srcpath = os.path.join(datapath, 'trn/main-agent/')
-        elif split in ['val']:
+        elif split == 'val':
             srcpath = os.path.join(datapath, 'val/main-agent/')
+
         else:
             raise NotImplementedError
 
@@ -71,6 +72,16 @@ class Genea2023(data.Dataset):
             assert os.path.isfile( m ), "Motion file {} not found".format(m)
             assert os.path.isfile( a ), "Audio file {} not found".format(a)
             assert os.path.isfile( t ), "Text file {} not found".format(t)
+
+        # Recompute dataset params to include only takes with hand information
+        if split == 'hands':
+            tokeep = [i for i, take in enumerate(self.takes) if take[2] == 'finger_incl']
+            self.takes = [self.takes[i] for i in tokeep]
+            self.frames = self.frames[tokeep]
+            self.samples_per_file = [int(np.floor( (n - self.window ) / self.step)) for n in self.frames]
+            self.samples_cumulative = [np.sum(self.samples_per_file[:i+1]) for i in range(len(self.samples_per_file))]
+            self.length = self.samples_cumulative[-1]
+
   
     def __getitem__(self, idx):
         # find the file that the sample belongs two
