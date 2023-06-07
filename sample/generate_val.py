@@ -44,8 +44,8 @@ def main():
             out_path += '_' + os.path.basename(args.input_text).replace('.txt', '').replace(' ', '_').replace('.', '')
 
     # Hard-coded takes to be generated
-    takes_to_generate = np.arange(20)
-    chunks_per_take = 14 # TODO: implement for whole take
+    takes_to_generate = np.arange(10)
+    chunks_per_take = 8 # TODO: implement for whole take
     num_samples = len(takes_to_generate)
 
 
@@ -84,6 +84,10 @@ def main():
     all_lengths = []
     all_text = []
     all_audios = []
+    all_gt_motions_rot = []
+    all_gt_motions = []
+    all_sample_with_seed = []
+    all_sample_with_seed_rot = []
 
     for chunk in range(chunks_per_take): # Motion is generated in chunks, for each chunk we load the corresponding data from the dataset for every take in takes_to_generate
 
@@ -95,7 +99,7 @@ def main():
                 raise ValueError(f'Chunk {chunk} is out of range for take {take}.') #i.e., you are getting out of the take
             inputs.append(data.dataset.__getitem__(chunk_index))
 
-        _, model_kwargs = gg_collate(inputs) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
+        gt_motion, model_kwargs = gg_collate(inputs) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
         model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [num_samples(bs), njoints, 1, seed_len]
 
         if chunk == 0: 
@@ -128,6 +132,11 @@ def main():
 
         sample = data.dataset.inv_transform(sample_out.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
 
+        #ground_truth
+        gt_motion = data.dataset.inv_transform(gt_motion.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
+        
+        #sample_with_seed = data.dataset.inv_transform(model_kwargs['y']['seed'].cpu().permute(1, 2, 0).unsqueeze(1)).float()
+        #sample_with_seed = torch.cat([sample_with_seed, sample], dim=2) ## [num_samples(bs), 1, chunk_len, njoints]
 
         # Separating positions and rotations
         if args.dataset == 'genea2023':
@@ -138,6 +147,23 @@ def main():
             #rotations
             sample_rot = sample_rot.view(sample_rot.shape[:-1] + (-1, 3))
             sample_rot = sample_rot.view(-1, *sample_rot.shape[2:]).permute(0, 2, 3, 1)
+            
+
+            
+            gt_motion_pos, gt_motion_rot = gt_motion[..., idx_positions], gt_motion[..., idx_rotations]
+            gt_motion_rot = gt_motion_rot.view(gt_motion_rot.shape[:-1] + (-1, 3))
+            gt_motion_rot = gt_motion_rot.view(-1, *gt_motion_rot.shape[2:]).permute(0, 2, 3, 1)
+
+            gt_motion_pos = gt_motion_pos.view(gt_motion_pos.shape[:-1] + (-1, 3))
+            gt_motion_pos = gt_motion_pos.view(-1, *gt_motion_pos.shape[2:]).permute(0, 2, 3, 1)
+
+            #sample with seed
+            #sample_with_seed_pos, sample_with_seed_rot = sample_with_seed[..., idx_positions], sample_with_seed[..., idx_rotations]
+            #sample_with_seed_pos = sample_with_seed_pos.view(sample_with_seed_pos.shape[:-1] + (-1, 3))
+            #sample_with_seed_pos = sample_with_seed_pos.view(-1, *sample_with_seed_pos.shape[2:]).permute(0, 2, 3, 1)
+
+            #sample_with_seed_rot = sample_with_seed_rot.view(sample_with_seed_rot.shape[:-1] + (-1, 3))
+            #sample_with_seed_rot = sample_with_seed_rot.view(-1, *sample_with_seed_rot.shape[2:]).permute(0, 2, 3, 1)
 
 
         elif args.dataset == 'genea2023+':
@@ -150,6 +176,16 @@ def main():
             sample_rot = geometry.rotation_6d_to_matrix(sample_rot) # [num_samples(bs), 1, chunk_len, n_joints, 3, 3]
             sample_rot = geometry.matrix_to_euler_angles(sample_rot, "ZXY")[..., [1, 2, 0] ]*180/np.pi # [num_samples(bs), 1, chunk_len, n_joints, 3]
             sample_rot = sample_rot.view(-1, *sample_rot.shape[2:]).permute(0, 2, 3, 1) # [num_samples(bs)*chunk_len, n_joints, 3]
+
+            #ground truth
+            gt_motion_pos, gt_motion_rot = gt_motion[..., idx_positions], gt_motion[..., idx_rotations]
+            gt_motion_rot = gt_motion_rot.view(gt_motion_rot.shape[:-1] + (-1, 6)) # [num_samples(bs), 1, chunk_len, n_joints, 6]
+            gt_motion_rot = geometry.rotation_6d_to_matrix(gt_motion_rot) # [num_samples(bs), 1, chunk_len, n_joints, 3, 3]
+            gt_motion_rot = geometry.matrix_to_euler_angles(gt_motion_rot, "ZXY")[..., [1, 2, 0] ]*180/np.pi # [num_samples(bs), 1, chunk_len, n_joints, 3]
+            gt_motion_rot = gt_motion_rot.view(-1, *gt_motion_rot.shape[2:]).permute(0, 2, 3, 1)
+
+            gt_motion_pos = gt_motion_pos.view(gt_motion_pos.shape[:-1] + (-1, 3))
+            gt_motion_pos = gt_motion_pos.view(-1, *gt_motion_pos.shape[2:]).permute(0, 2, 3, 1)
             
         else:
             raise ValueError(f'Unknown dataset: {args.dataset}')
@@ -171,6 +207,8 @@ def main():
         all_motions.append(sample.cpu().numpy())
         all_motions_rot.append(sample_rot.cpu().numpy())
         all_lengths.append(model_kwargs['y']['lengths'].cpu().numpy())
+        all_gt_motions_rot.append(gt_motion_rot.cpu().numpy())
+        all_gt_motions.append(gt_motion_pos.cpu().numpy())
 
         #all_sample_with_seed.append(sample_with_seed_pos.cpu().numpy())
         #all_sample_with_seed_rot.append(sample_with_seed_rot.cpu().numpy())
@@ -183,6 +221,8 @@ def main():
     all_motions_rot = all_motions_rot[:total_num_samples]  # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
     all_text = all_text[:total_num_samples]
     all_lengths = np.concatenate(all_lengths, axis=0)[:total_num_samples]
+    all_gt_motions_rot = np.concatenate(all_gt_motions_rot, axis=3) # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
+    all_gt_motions = np.concatenate(all_gt_motions, axis=3)
 
     # Smooth chunk transitions
     inter_range = 10 #interpolation range in frames
@@ -199,6 +239,14 @@ def main():
             
     all_motions = savgol_filter(all_motions, 9, 3, axis=-1)
     all_motions_rot = savgol_filter(all_motions_rot, 9, 3, axis=-1)
+
+    #all_sample_with_seed = np.concatenate(all_sample_with_seed, axis=3)
+    #all_sample_with_seed_rot = np.concatenate(all_sample_with_seed_rot, axis=3)
+    
+    #gt_motion = data.dataset.inv_transform(gt_motion.cpu().permute(0, 2, 3, 1))
+    #gt_motion = gt_motion[..., idx_rotations]
+    #gt_motion = gt_motion.view(gt_motion.shape[:-1] + (-1, 3))
+    #gt_motion = gt_motion.view(-1, *gt_motion.shape[2:]).numpy()
     
 
     if os.path.exists(out_path):
@@ -255,6 +303,44 @@ def main():
         print('Saving bvh file...')
         bvhsdk.WriteBVH(bvhreference, path=animation_save_path, name=None, frametime=1/fps, refTPose=False)
 
+        # Saving gorund truth motions as bvh file
+        rotations = all_gt_motions_rot[i] # [njoints/3, 3, chunk_len*chunks]
+        rotations = rotations.transpose(2, 0, 1) # [chunk_len*chunks, njoints/3, 3]
+        positions = all_gt_motions[i]
+        positions = positions.transpose(2, 0, 1)
+        bvhreference.frames = rotations.shape[0]
+        for j, joint in enumerate(bvhreference.getlistofjoints()):
+            joint.rotation = rotations[:, j, :]
+            joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
+        bvhreference.root.translation = positions[:, 0, :]
+        #bvhreference.root.children[0].translation = positions[:, 1, :]
+        # Move the ground truth motion to the position of the interlocutor
+        # We are doing this to compare the generated motion with the ground truth motion using the oficial genea visualization
+        # Get rotation matrix to be performed
+        matrix = bvhsdk.mathutils.matrixRotation(180, y=1, shape=4)
+        # Get joint's current global rotation matrix
+        transmat = np.array([bvhreference.root.children[0].getGlobalTransform(i) for i in range(bvhreference.frames) ])
+        # Apply rotation
+        newmat = np.array([np.dot(matrix, transmat[i]) for i in range(bvhreference.frames)])
+        # Get new local euler angles
+        bvhreference.root.children[0].rotation = np.array([bvhsdk.mathutils.eulerFromMatrix(newmat[i], bvhreference.root.children[0].order)[0] for i in range(bvhreference.frames)])
+        # Adjust root position
+        hips_height =  np.asarray([0,91.5,0])
+        distance = np.array([0,0,150])
+        bvhreference.root.translation = np.array([newmat[i][:,-1][:-1] -hips_height + distance for i in range(bvhreference.frames)])
+        print('Saving bvh file...')
+        bvhsdk.WriteBVH(bvhreference, path=animation_save_path + '_gt', name=None, frametime=1/fps, refTPose=False)
+
+        # Saving sample with seed as bvh file
+        #rotations = all_sample_with_seed_rot[i] # [njoints/3, 3, chunk_len*chunks]
+        #rotations = rotations.transpose(2, 0, 1) # [chunk_len*chunks, njoints/3, 3]
+        #bvhreference.frames = rotations.shape[0]
+        #for j, joint in enumerate(bvhreference.getlistofjoints()):
+        #    joint.rotation = rotations[:, j, :]
+        #    joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
+        #print('Saving bvh file...')
+        #bvhsdk.WriteBVH(bvhreference, path=animation_save_path + '_with_seed', name=None, frametime=1/fps, refTPose=False)
+
         # Saving audio and joinning it with the mp4 file of generated motion
         wavfile = animation_save_path + '.wav'
         mp4file = wavfile.replace('.wav', '.mp4')
@@ -308,7 +394,7 @@ def load_dataset(args, batch_size):
     data = get_dataset_loader(name=args.dataset,
                               batch_size=batch_size,
                               num_frames=args.num_frames,
-                              split='tst',
+                              split='val',
                               hml_mode='text_only',
                               step = args.num_frames,
                               use_wavlm=args.use_wavlm)
