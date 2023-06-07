@@ -94,7 +94,7 @@ class Genea2023(data.Dataset):
     def __getvad(self, file, sample):
         # Cut Chunk
         vad_file = np.load(os.path.join(self.vad_path,self.takes[file][0]+'.npy'))
-        vad_vals = vad_file[sample*self.step: sample*self.step + self.window,:]             # [CHUNK_LEN, ]
+        vad_vals = vad_file[sample*self.step: sample*self.step + self.window]             # [CHUNK_LEN, ]
 
         # Reshape
         vad_vals = np.expand_dims(vad_vals, 1)                                              # [CHUNK_LEN, 1]
