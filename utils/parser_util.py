@@ -89,7 +89,6 @@ def add_model_options(parser):
                        help="Model is trained unconditionally. That is, it is constrained by neither text nor action. "
                             "Currently tested on HumanAct12 only.")
     group.add_argument("--use_text", action='store_true', help="Unlock text for any usage.")
-    group.add_argument("--use_audio", action='store_true', help="Unlock audio for any usage.")
     group.add_argument("--mfcc_input", action='store_true', help="Agregate audio mfcc features in the motion.")
     group.add_argument("--use_wav_enc", action='store_true', help="Agregate audio representation extracted w/ conv encoder in the motion.")
     group.add_argument("--seed_poses", type=int, default = 10, help="Number of seed poses to condition the beginning of generated motion.")
@@ -108,6 +107,8 @@ def add_data_options(parser):
                        help="Step taken to get next window in the take (overlap between successive samples is equal to num_frames - step).")
     group.add_argument("--use_wavlm", default=False, type=bool,
                        help="Use wavlm representations.")
+    group.add_argument("--use_vad", default=False, type=bool,
+                       help="Use vad speech indicator values.")
 
 def add_training_options(parser):
     group = parser.add_argument_group('training')

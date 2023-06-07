@@ -8,7 +8,7 @@ import librosa
 import torch.nn.functional as F
 
 class Genea2023(data.Dataset):
-    def __init__(self, name, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False):
+    def __init__(self, name, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False, use_vad=False):
 
         if split=='train':
             srcpath = os.path.join(datapath, 'trn/main-agent/')
@@ -49,6 +49,10 @@ class Genea2023(data.Dataset):
         if self.use_wavlm:
             self.wavlm_rep_path = os.path.join(srcpath, 'wavlm_representations')
 
+        self.use_vad = use_vad
+        if self.use_vad:
+            self.vad_path = os.path.join(srcpath, "vad")
+
         with open(os.path.join(srcpath, '../metadata.csv')) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
             self.takes = [take for take in reader]
@@ -78,10 +82,24 @@ class Genea2023(data.Dataset):
         motion, seed_poses = self.__getmotion( file_idx, sample)
         audio, audio_rep = self.__getaudiofeats(file_idx, sample)
         n_text, text, tokens = self.__gettext(file_idx, sample)
-        return motion, text, self.window, audio, audio_rep, seed_poses
+        if self.use_vad:
+            vad = self.__getvad(file_idx, sample)
+        else:
+            vad = np.ones(1,int(self.window))     # Dummy
+        return motion, text, self.window, audio, audio_rep, seed_poses, vad
 
     def __len__(self):
         return self.length
+
+    def __getvad(self, file, sample):
+        # Cut Chunk
+        vad_file = np.load(os.path.join(self.vad_path,self.takes[file][0]+'.npy'))
+        vad_vals = vad_file[sample*self.step: sample*self.step + self.window,:]             # [CHUNK_LEN, ]
+
+        # Reshape
+        vad_vals = np.expand_dims(vad_vals, 1)                                              # [CHUNK_LEN, 1]
+        vad_vals = np.transpose(vad_vals, (1,0))                                            # [1, CHUNK_LEN]
+        return vad_vals
 
     def __getmotion(self, file, sample):
         if self.name == 'genea2023+':

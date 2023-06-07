@@ -35,10 +35,16 @@ class MDM(nn.Module):
         self.clip_dim = clip_dim
         if self.use_text:
             self.embed_text = nn.Linear(self.clip_dim, self.text_dim)
-            print('EMBED TEXT')
+            print('Using Text')
             print('Loading CLIP...')
             self.clip_version = clip_version
             self.clip_model = self.load_and_freeze_clip(clip_version)
+
+        # VAD
+        self.use_vad = kargs.get('use_vad', False)
+        if self.use_vad:
+            self.vad_lookup = nn.Embedding(2, self.latent_dim)
+            print('Using VAD')
 
         # Seed Pose Encoder
         self.seed_poses = kargs.get('seed_poses', 0)
@@ -74,7 +80,7 @@ class MDM(nn.Module):
 
         # Cross-Local Attention
         self.cl_head=8
-        self.project_to_lat = nn.Linear(self.latent_dim * 2 + self.audio_feat_dim, self.latent_dim)
+        self.project_to_lat = nn.Linear(self.latent_dim * 3 + self.audio_feat_dim, self.latent_dim)
         self.cross_local_attention = LocalAttention(
         #    dim=32,  # dimension of each head (you need to pass this in for relative positional encoding)
             window_size=10, 
@@ -132,6 +138,11 @@ class MDM(nn.Module):
         #emb_seed = self.seed_pose_encoder(flat_seed)
         emb_seed = self.seed_pose_encoder(self.mask_cond(flat_seed, force_mask=force_mask)) # [BS, LAT_DIM] or [BS, LAT_DIM - TEXT_DIM]
 
+        # VAD Embeddings
+        vad_vals = y['vad']                                     # [BS, CHUNK_LEN]
+        emb_vad = self.vad_lookup(vad_vals)                     # [BS, CHUNK_LEN, LAT_DIM]
+        emb_vad = emb_vad.permute(1, 0, 2)                      # [CHUNK_LEN, BS, LAT_DIM]
+
         # Timesteps Embeddings
         emb_t = self.embed_timestep(timesteps)                  # [1, BS, LAT_DIM]
 
@@ -159,7 +170,7 @@ class MDM(nn.Module):
         #############################
 
         # Cat Pose w/ Audio (Fine-Grained) Embeddings
-        fg_embs = torch.cat((emb_pose, emb_audio), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM]
+        fg_embs = torch.cat((emb_pose, emb_audio, emb_vad), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM]
 
         # Cat Seed w/ Text Embeddings (if exist)
         if self.use_text:
@@ -174,7 +185,7 @@ class MDM(nn.Module):
         coa_embs_rep = coa_embs.repeat(nframes, 1, 1)           # [CHUNK_LEN, BS, LAT_DIM]
 
         # Concatenate All to form feature inputs
-        embs = torch.cat((fg_embs, coa_embs_rep), axis=2)       # [CHUNK_LEN, BS, LAT_DIM + LAT_DIM + AUDIO_DIM]
+        embs = torch.cat((fg_embs, coa_embs_rep), axis=2)       # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM + LAT_DIM]
 
         # Project to Latent Dim
         xseq = self.project_to_lat(embs)                        # [CHUNK_LEN, BS, LAT_DIM]
