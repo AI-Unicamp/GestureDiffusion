@@ -66,7 +66,7 @@ def gg_collate(batch):
         'audio': torch.tensor(b[3]).unsqueeze(0),           # [seqlen] -> [1, seqlen]
         'audio_rep': torch.from_numpy(b[4]).float(),        # [1, AUDIO_HID_DIM, 1, CHUNK_LEN] , (AUDIO_HID_DIM = MFCC_DIM or 768)
         'seed': torch.tensor(b[5].T).float().unsqueeze(1),  # [n_seed_poses, J] -> [J, 1, n_seed_poses]
-        'vad': torch.from_numpy(b[6]).float(),              # [1, CHUNK_LEN] 
+        'vad': torch.from_numpy(b[6]).long(),              # [1, CHUNK_LEN] 
     } for b in batch]
     return collate(adapted_batch)
 
