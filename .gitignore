@@ -21,6 +21,7 @@ allmotions.npy
 runcontainer.txt
 __MACOSX/
 .vscode/
+speechbrain/pretrained*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

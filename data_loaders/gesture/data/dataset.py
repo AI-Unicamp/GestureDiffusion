@@ -50,7 +50,7 @@ class Genea2023(data.Dataset):
             for audiofile in os.listdir(self.audiopath):
                 if audiofile.endswith('.npy'):
                     audio = np.load(os.path.join(self.audiopath, audiofile))
-                    self.frames.append(audio.shape[0])
+                    self.frames.append( int(audio.shape[0]/self.sr*self.fps))
             self.frames = np.array(self.frames)
             
         self.samples_per_file = [int(np.floor( (n - self.window ) / self.step)) for n in self.frames]
@@ -95,6 +95,8 @@ class Genea2023(data.Dataset):
 
   
     def __getitem__(self, idx):
+        if self.split == 'tst':
+            raise ValueError('Test set does should not use __getitem__(), use gettestbatch() instead')
         # find the file that the sample belongs two
         file_idx = np.searchsorted(self.samples_cumulative, idx+1, side='left')
         # find sample's index
@@ -103,11 +105,7 @@ class Genea2023(data.Dataset):
         else:
             sample = idx
         take_name = self.takes[file_idx][0]
-        if self.split not in 'tst':
-            motion, seed_poses = self.__getmotion( file_idx, sample)
-        else:
-            feats = 1245 if self.name == 'genea2023+' else 498
-            motion, seed_poses = np.zeros((self.window, feats)), np.zeros((self.n_seed_poses, feats)) #dummy
+        motion, seed_poses = self.__getmotion( file_idx, sample)
         audio, audio_rep = self.__getaudiofeats(file_idx, sample)
         n_text, text, tokens = self.__gettext(file_idx, sample)
         return motion, text, self.window, audio, audio_rep, seed_poses
@@ -145,12 +143,6 @@ class Genea2023(data.Dataset):
                 seed_poses = (motion_file[sample*self.step - self.n_seed_poses: sample*self.step,:] - self.mean) / self.std    
             
         return motion, seed_poses
-    
-    def __oldgetmotion(self, file, sample):
-        motion_file = np.load(os.path.join(self.motionpath,self.takes[file][0]+'.npy'))
-        motion = (motion_file[sample*self.step: sample*self.step + self.window,:] - self.mean) / self.std
-        seed_poses = (motion_file[sample*self.step: sample*self.step + self.n_seed_poses,:] - self.mean) / self.std
-        return motion, seed_poses
 
     def __getaudiofeats(self, file, sample):
         # Load Audio
@@ -161,6 +153,9 @@ class Genea2023(data.Dataset):
         i = sample*self.sr*self.step/self.fps
         signal = signal[ int(i) : int(i+self.window*self.sr/self.fps) ]
 
+        return self.__compute_audiofeats(signal)
+
+    def __compute_audiofeats(self, signal):
         # WavLM Representations
         if self.use_wavlm:
             with torch.no_grad():
@@ -229,3 +224,50 @@ class Genea2023(data.Dataset):
         self.rot6dpos_mean = np.load(os.path.join(statspath, 'rot6dpos_Mean.npy'))
         self.vel_std = np.load(os.path.join(statspath, 'velrotpos_Std.npy'))
         self.vel_mean = np.load(os.path.join(statspath, 'velrotpos_Mean.npy'))
+
+    def gettestbatch(self, num_samples):
+        max_length = max(self.frames[:num_samples])
+        max_length = max_length + self.window - max_length%self.window # increase length so it can be divisible by window
+        batch_audio = []
+        batch_audio_rep = []
+        batch_text = []
+        for i, _ in enumerate(self.takes[:num_samples]):
+            # Get audio file
+            audio_feats = []
+            signal  = np.zeros(int(max_length*self.sr/self.fps))
+            signal_ = np.load(os.path.join(self.audiopath,self.takes[i][0]+'.npy'))
+            signal[:len(signal_)] = signal_
+
+            # Get text file
+            text_feats = []
+            with open(os.path.join(self.textpath, self.takes[i][0]+'.tsv')) as tsv:
+                reader = csv.reader(tsv, delimiter='\t')
+                file = [ [float(word[0])*self.fps, float(word[1])*self.fps, word[2]] for word in reader]
+
+            for chunk in range(int(max_length/self.window)):
+                # Get audio features
+                k = chunk*self.window*self.sr/self.fps
+                _, audio_feat = self.__compute_audiofeats(signal[int(k) : int(k+self.window*self.sr/self.fps)])
+                audio_feats.append(audio_feat)
+
+                # Get text
+                begin = self.search_time(file, chunk*self.window)
+                end = self.search_time(file, chunk*self.window + self.window)
+                text = [ word[-1] for word in file[begin: end] ] if begin or end else []
+                text_feats.append(' '.join(text))
+
+            
+            audio_feats = np.concatenate(audio_feats, axis=-1)
+            end_audio = int(len(signal_)/self.sr*self.fps)
+            audio_feats[..., end_audio:] = np.zeros_like(audio_feats[..., end_audio:]) # zero audio feats after end of audio
+            batch_audio_rep.append(audio_feats)
+            batch_text.append(text_feats)
+            batch_audio.append(signal_)
+
+        # Dummy motions and seed poses
+        feats = 1245 if self.name == 'genea2023+' else 498
+        motion, seed_poses = np.zeros((self.window, feats)), np.zeros((self.n_seed_poses, feats)) #dummy
+
+        # Attention: this is not collate-ready!
+        return motion, batch_text, self.window, batch_audio, batch_audio_rep, seed_poses, max_length
+            
