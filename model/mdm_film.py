@@ -176,7 +176,7 @@ class MDM(nn.Module):
         xseq = self.sequence_pos_encoder(xseq)                  # [CHUNK_LEN+N_SEED, BS, LAT_DIM]
 
         # Global Attention
-        output = self.global_film(xseq)                         # [CHUNK_LEN+N_SEED, BS, LAT_DIM] 
+        output = self.global_film(gammas, betas, xseq)          # [CHUNK_LEN+N_SEED, BS, LAT_DIM] 
 
         # Ignore First Tokens
         output = output[self.seed_poses:]                       # [CHUNK_LEN, BS, LAT_DIM]
