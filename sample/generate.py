@@ -44,8 +44,7 @@ def main():
             out_path += '_' + os.path.basename(args.input_text).replace('.txt', '').replace(' ', '_').replace('.', '')
 
     # Hard-coded takes to be generated
-    takes_to_generate = np.arange(20)
-    chunks_per_take = 14 # TODO: implement for whole take
+    takes_to_generate = np.arange(10)
     num_samples = len(takes_to_generate)
 
 
@@ -61,8 +60,6 @@ def main():
 
     print('Loading dataset...')
     data = load_dataset(args, num_samples)
-
-    total_num_samples = num_samples * chunks_per_take
 
     print("Creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(args, data)
@@ -85,15 +82,26 @@ def main():
     all_text = []
     all_audios = []
 
-    for chunk in range(chunks_per_take): # Motion is generated in chunks, for each chunk we load the corresponding data from the dataset for every take in takes_to_generate
+    #data.dataset.gettestbatch(num_samples)
+    
+    # dummy motion, batch_text, window, batch_audio, batch_audio_rep, dummy seed_poses, max_length
+    dummy_motion, data_text, chunk_len, data_audio, data_audio_rep, dummy_seed, max_length, vad_vals  = data.dataset.gettestbatch(num_samples)
 
+    chunks_per_take = int(max_length/chunk_len)
+    for chunk in range(chunks_per_take): # Motion is generated in chunks, for each chunk we load the corresponding data
+        empty = np.array([])
         inputs = []
-        for take in takes_to_generate: # For each take we will load the current chunk
-            chunk_index = 0 if take == 0 else data.dataset.samples_cumulative[take-1]
-            chunk_index += chunk
-            if chunk_index >= data.dataset.samples_cumulative[take]:
-                raise ValueError(f'Chunk {chunk} is out of range for take {take}.') #i.e., you are getting out of the take
-            inputs.append(data.dataset.__getitem__(chunk_index))
+        for take in range(num_samples): # For each take we will load the current chunk
+            vad = vad_vals[take][..., chunk:chunk+chunk_len] if args.use_vad else empty
+            inputs.append((empty, data_text[take][chunk], chunk_len, empty, data_audio_rep[take][..., chunk:chunk+chunk_len], dummy_seed, vad))
+
+
+        #for take in takes_to_generate: # For each take we will load the current chunk
+        #    chunk_index = 0 if take == 0 else data.dataset.samples_cumulative[take-1]
+        #    chunk_index += chunk
+        #    if chunk_index >= data.dataset.samples_cumulative[take]:
+        #        raise ValueError(f'Chunk {chunk} is out of range for take {take}.') #i.e., you are getting out of the take
+        #    inputs.append(data.dataset.__getitem__(chunk_index))
 
         _, model_kwargs = gg_collate(inputs) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
         model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [num_samples(bs), njoints, 1, seed_len]
@@ -105,7 +113,7 @@ def main():
             
 
 
-        print('### Sampling chunk {} of {}'.format(chunk+1, chunks_per_take))
+        print('### Sampling chunk {} of {}'.format(chunk+1, int(max_length/chunk_len)))
 
         # add CFG scale to batch
         if args.guidance_param != 1: # default 2.5
@@ -175,14 +183,15 @@ def main():
         #all_sample_with_seed.append(sample_with_seed_pos.cpu().numpy())
         #all_sample_with_seed_rot.append(sample_with_seed_rot.cpu().numpy())
 
-
-    all_audios = np.concatenate(all_audios, axis=1)
+    #total_num_samples = num_samples * chunks_per_take
+    #all_audios = np.concatenate(all_audios, axis=1)
+    all_audios = data_audio
     all_motions = np.concatenate(all_motions, axis=3)
-    all_motions = all_motions[:total_num_samples]  # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
+    #all_motions = all_motions[:total_num_samples]  # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
     all_motions_rot = np.concatenate(all_motions_rot, axis=3)
-    all_motions_rot = all_motions_rot[:total_num_samples]  # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
-    all_text = all_text[:total_num_samples]
-    all_lengths = np.concatenate(all_lengths, axis=0)[:total_num_samples]
+    #all_motions_rot = all_motions_rot[:total_num_samples]  # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
+    #all_text = all_text[:total_num_samples]
+    all_lengths = np.concatenate(all_lengths, axis=0)
 
     # Smooth chunk transitions
     inter_range = 10 #interpolation range in frames
@@ -229,11 +238,13 @@ def main():
 
 
     for i, take in enumerate(takes_to_generate):
+        final_frame = data.dataset.frames[i]
         save_file = data.dataset.takes[take][0]
         print('Saving take {}: {}'.format(i, save_file))
         animation_save_path = os.path.join(out_path, save_file)
         caption = '' # since we are generating a ~1 min long take the caption would be too long
         positions = all_motions[i]
+        positions = positions[..., :final_frame]
         positions = positions.transpose(2, 0, 1)
         plot_3d_motion(animation_save_path + '.mp4', skeleton, positions, dataset=args.dataset, title=caption, fps=fps)
         # Credit for visualization: https://github.com/EricGuo5513/text-to-motion
@@ -245,6 +256,7 @@ def main():
 
         # Saving generated motion as bvh file
         rotations = all_motions_rot[i] # [njoints/3, 3, chunk_len*chunks]
+        rotations = rotations[..., :final_frame]
         rotations = rotations.transpose(2, 0, 1) # [chunk_len*chunks, njoints/3, 3]
         bvhreference.frames = rotations.shape[0]
         for j, joint in enumerate(bvhreference.getlistofjoints()):
@@ -311,7 +323,8 @@ def load_dataset(args, batch_size):
                               split='tst',
                               hml_mode='text_only',
                               step = args.num_frames,
-                              use_wavlm=args.use_wavlm)
+                              use_wavlm=args.use_wavlm,
+                              use_vad = args.use_vad)
     #data.fixed_length = n_frames
     return data
 

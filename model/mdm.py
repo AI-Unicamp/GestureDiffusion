@@ -4,8 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import clip
 from model.rotation2xyz import Rotation2xyz
-from model.local_attention import SinusoidalEmbeddings, apply_rotary_pos_emb
-from model.local_attention import LocalAttention
+from model.local_attention_diffstylegest import SinusoidalEmbeddings, apply_rotary_pos_emb
+from model.local_attention_diffstylegest import LocalAttention
 
 class MDM(nn.Module):
     def __init__(self, njoints, nfeats, pose_rep, data_rep, latent_dim=256, text_dim=64, ff_size=1024,
@@ -80,7 +80,10 @@ class MDM(nn.Module):
 
         # Cross-Local Attention
         self.cl_head=8
-        self.project_to_lat = nn.Linear(self.latent_dim * 3 + self.audio_feat_dim, self.latent_dim)
+        if self.use_vad:
+            self.project_to_lat = nn.Linear(self.latent_dim * 3 + self.audio_feat_dim, self.latent_dim)
+        else:
+            self.project_to_lat = nn.Linear(self.latent_dim * 2 + self.audio_feat_dim, self.latent_dim)
         self.cross_local_attention = LocalAttention(
         #    dim=32,  # dimension of each head (you need to pass this in for relative positional encoding)
             window_size=10, 
@@ -139,9 +142,10 @@ class MDM(nn.Module):
         emb_seed = self.seed_pose_encoder(self.mask_cond(flat_seed, force_mask=force_mask)) # [BS, LAT_DIM] or [BS, LAT_DIM - TEXT_DIM]
 
         # VAD Embeddings
-        vad_vals = y['vad']                                     # [BS, CHUNK_LEN]
-        emb_vad = self.vad_lookup(vad_vals)                     # [BS, CHUNK_LEN, LAT_DIM]
-        emb_vad = emb_vad.permute(1, 0, 2)                      # [CHUNK_LEN, BS, LAT_DIM]
+        if self.use_vad:
+            vad_vals = y['vad']                                     # [BS, CHUNK_LEN]
+            emb_vad = self.vad_lookup(vad_vals)                     # [BS, CHUNK_LEN, LAT_DIM]
+            emb_vad = emb_vad.permute(1, 0, 2)                      # [CHUNK_LEN, BS, LAT_DIM]
 
         # Timesteps Embeddings
         emb_t = self.embed_timestep(timesteps)                  # [1, BS, LAT_DIM]
