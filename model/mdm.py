@@ -174,7 +174,10 @@ class MDM(nn.Module):
         #############################
 
         # Cat Pose w/ Audio (Fine-Grained) Embeddings
-        fg_embs = torch.cat((emb_pose, emb_audio, emb_vad), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM]
+        if self.use_vad:
+            fg_embs = torch.cat((emb_pose, emb_audio, emb_vad), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM]
+        else:
+            fg_embs = torch.cat((emb_pose, emb_audio), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM]
 
         # Cat Seed w/ Text Embeddings (if exist)
         if self.use_text:
@@ -189,7 +192,7 @@ class MDM(nn.Module):
         coa_embs_rep = coa_embs.repeat(nframes, 1, 1)           # [CHUNK_LEN, BS, LAT_DIM]
 
         # Concatenate All to form feature inputs
-        embs = torch.cat((fg_embs, coa_embs_rep), axis=2)       # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM + LAT_DIM]
+        embs = torch.cat((fg_embs, coa_embs_rep), axis=2)       # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM + LAT_DIM] of 2* LAT_DIM If no VAD
 
         # Project to Latent Dim
         xseq = self.project_to_lat(embs)                        # [CHUNK_LEN, BS, LAT_DIM]
