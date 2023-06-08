@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from einops import rearrange
 
-from local_attention.local_attention import LocalAttention
+from model.local_attention.local_attention import LocalAttention
 
 # helper function
 
