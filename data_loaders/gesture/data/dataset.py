@@ -10,10 +10,13 @@ import torch.nn.functional as F
 class Genea2023(data.Dataset):
     def __init__(self, name, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False, use_vad=False):
 
-        if split=='train':
+        self.split = split
+        if self.split=='train':
             srcpath = os.path.join(datapath, 'trn/main-agent/')
-        elif split in ['val']:
+        elif self.split in ['val']:
             srcpath = os.path.join(datapath, 'val/main-agent/')
+        elif self.split == 'tst':
+            srcpath = os.path.join(datapath, 'tst/main-agent/')
         else:
             raise NotImplementedError
 
@@ -37,14 +40,23 @@ class Genea2023(data.Dataset):
         self.vel_std = np.array([ item if item != 0 else 1 for item in self.vel_std ])
         self.rot6dpos_std = np.array([ item if item != 0 else 1 for item in self.rot6dpos_std ])
 
-        self.motionpath = os.path.join(srcpath, 'motion_npy_rotpos')
-        self.motionpath_rot6d = os.path.join(srcpath, 'motion_npy_rot6dpos')
-        self.textpath = os.path.join(srcpath, 'tsv')
-        self.frames = np.load(os.path.join(srcpath, 'rotpos_frames.npy'))
+        if self.split in ['trn', 'val']:
+            self.motionpath = os.path.join(srcpath, 'motion_npy_rotpos')
+            self.motionpath_rot6d = os.path.join(srcpath, 'motion_npy_rot6dpos')
+            self.frames = np.load(os.path.join(srcpath, 'rotpos_frames.npy'))
+        else:
+            self.frames = []
+            for audiofile in os.listdir(self.audiopath):
+                if audiofile.endswith('.npy'):
+                    audio = np.load(os.path.join(self.audiopath, audiofile))
+                    self.frames.append(audio.shape[0])
+            self.frames = np.array(self.frames)
+
         self.samples_per_file = [int(np.floor( (n - self.window ) / self.step)) for n in self.frames]
         self.samples_cumulative = [np.sum(self.samples_per_file[:i+1]) for i in range(len(self.samples_per_file))]
         self.length = self.samples_cumulative[-1]
-   
+        self.textpath = os.path.join(srcpath, 'tsv')
+
         self.use_wavlm = use_wavlm
         if self.use_wavlm:
             self.wavlm_rep_path = os.path.join(srcpath, 'wavlm_representations')
@@ -60,15 +72,15 @@ class Genea2023(data.Dataset):
             for take in self.takes:
                 take[0] += '_main-agent'
 
-
-        for take in self.takes:
-            name = take[0]
-            m = os.path.join(self.motionpath, name+'.npy')
-            a = os.path.join(self.audiopath, name+'.npy')
-            t = os.path.join(self.textpath, name+'.tsv')
-            assert os.path.isfile( m ), "Motion file {} not found".format(m)
-            assert os.path.isfile( a ), "Audio file {} not found".format(a)
-            assert os.path.isfile( t ), "Text file {} not found".format(t)
+        if False:
+            for take in self.takes:
+                name = take[0]
+                m = os.path.join(self.motionpath, name+'.npy')
+                a = os.path.join(self.audiopath, name+'.npy')
+                t = os.path.join(self.textpath, name+'.tsv')
+                assert os.path.isfile( m ), "Motion file {} not found".format(m)
+                assert os.path.isfile( a ), "Audio file {} not found".format(a)
+                assert os.path.isfile( t ), "Text file {} not found".format(t)
   
     def __getitem__(self, idx):
         # find the file that the sample belongs two
@@ -79,7 +91,11 @@ class Genea2023(data.Dataset):
         else:
             sample = idx
         take_name = self.takes[file_idx][0]
-        motion, seed_poses = self.__getmotion( file_idx, sample)
+        if self.split not in 'tst':
+            motion, seed_poses = self.__getmotion( file_idx, sample)
+        else:
+            feats = 1245 if self.name == 'genea2023+' else 498
+            motion, seed_poses = np.zeros((self.window, feats)), np.zeros((self.n_seed_poses, feats)) #dummy
         audio, audio_rep = self.__getaudiofeats(file_idx, sample)
         n_text, text, tokens = self.__gettext(file_idx, sample)
         if self.use_vad:
