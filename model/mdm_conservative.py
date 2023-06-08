@@ -11,7 +11,7 @@ class MDM(nn.Module):
                   num_layers=8, num_heads=4, dropout=0.1, activation="gelu",
                  dataset='amass', clip_dim=512, clip_version=None, **kargs):
         super().__init__()
-        print('Using MDM FiLM')
+        print('Using MDM Conservative')
 
         # General Configs        
         self.dataset = dataset
@@ -37,6 +37,7 @@ class MDM(nn.Module):
             print('Loading CLIP...')
             self.clip_version = clip_version
             self.clip_model = self.load_and_freeze_clip(clip_version)
+            assert self.use_text == False
 
         # VAD
         self.use_vad = kargs.get('use_vad', False)
@@ -67,22 +68,25 @@ class MDM(nn.Module):
         # Pose Encoder
         self.input_process = InputProcess(self.data_rep, self.input_feats, self.latent_dim)
 
-        # Global Context Encoder
-        self.gce = GlobalContextEncoder(latent_dim)
-
         # Feature Projection
         self.project_to_lat = nn.Linear(self.latent_dim * 2 + self.audio_feat_dim, self.latent_dim)
+        self.project_to_lat2 = nn.Linear(self.latent_dim * 2, self.latent_dim)
 
         # Local Self-Attention
-        self.local_film = LocalFilm()
+        self.local_transformer = LocalTransformer()
 
         # Global Self-Attention
         self.num_heads = num_heads
         self.ff_size = ff_size
         self.activation = activation
-        self.num_layers = num_layers        
-        self.global_film = GlobalFilm(num_heads, ff_size, activation, num_layers, dropout, latent_dim)
- 
+        self.num_layers = num_layers
+        self.global_transformer = nn.TransformerEncoder(nn.TransformerEncoderLayer(
+                                                        d_model=self.latent_dim,
+                                                        nhead=self.num_heads,
+                                                        dim_feedforward=self.ff_size,
+                                                        dropout=self.dropout,
+                                                        activation=self.activation),
+                                                        num_layers=4)     
 
         # Project Representation to Output Pose
         self.output_process = OutputProcess(self.data_rep, self.input_feats, self.latent_dim, self.njoints,
@@ -99,13 +103,6 @@ class MDM(nn.Module):
         #############################
         #### FEATURE CALCULATION ####
         #############################
-
-        # Text Embeddings
-        if self.use_text:
-            enc_text = self.encode_text(y['text'])
-            emb_text = self.embed_text(enc_text)                # [1, BS, LAT_DIM]
-            emb_text = emb_text.squeeze(0)                      # [BS, LAT_DIM]
-
 
         # Seed Poses Embeddings
         seed = y['seed'].squeeze(2).permute(0,2,1)              # [BS, POSE_DIM, 1, SEED_POSES] -> [BS, POSE_DIM, SEED_POSES] -> [BS, SEED_POSES, POSE_DIM] 
@@ -140,10 +137,6 @@ class MDM(nn.Module):
         #### FEATURE AGGREGATION ####
         #############################
 
-        # Global Embeddings
-        global_embs = (emb_text + emb_t).permute(1,0,2)         # [BS, 1, LAT_DIM]
-        gammas, betas = self.gce(global_embs)                   #  
-
         # Cat Pose w/ Audio and VAD(Fine-Grained) Embeddings
         fg_embs=torch.cat((emb_pose,emb_audio,emb_vad),axis=2)  # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM]
 
@@ -158,8 +151,9 @@ class MDM(nn.Module):
         xseq = self.sequence_pos_encoder(xseq)                  # [CHUNK_LEN, BS, LAT_DIM]  
 
         # Local Attention
-        
-        xseq = self.local_film(gammas, betas, xseq)             # [CHUNK_LEN, BS, LAT_DIM]
+        xseq = xseq.permute(1, 0, 2)                            # [BS, CHUNK_LEN, LAT_DIM]
+        xseq = self.local_transformer(xseq)                     # [BS, CHUNK_LEN, LAT_DIM]
+        xseq = xseq.permute(1, 0, 2)                            # [CHUNK_LEN, BS, LAT_DIM]
 
         #############################
         #### FEATURE AGGREGATION ####
@@ -167,6 +161,15 @@ class MDM(nn.Module):
 
         # Concat Past Information
         xseq = torch.cat((embs_seed, xseq), axis=0)             # [CHUNK_LEN+N_SEED, BS, LAT_DIM]   
+
+        # Repeat timestep embedding
+        emb_t = emb_t.repeat(nframes+self.seed_poses, 1, 1)     # [CHUNK_LEN+N_SEED, BS, LAT_DIM]
+
+        # Concat expanded global information
+        xseq = torch.cat((xseq, emb_t), axis=2)                 # [CHUNK_LEN+N_SEED, BS, LAT_DIM+LAT_DIM]
+
+        # Project
+        xseq = self.project_to_lat2(xseq)                       # [CHUNK_LEN+N_SEED, BS, LAT_DIM]
 
         #######################
         ##### GLOBAL PASS #####
@@ -176,7 +179,7 @@ class MDM(nn.Module):
         xseq = self.sequence_pos_encoder(xseq)                  # [CHUNK_LEN+N_SEED, BS, LAT_DIM]
 
         # Global Attention
-        output = self.global_film(xseq)                         # [CHUNK_LEN+N_SEED, BS, LAT_DIM] 
+        output = self.global_transformer(xseq)                  # [CHUNK_LEN+N_SEED, BS, LAT_DIM] 
 
         # Ignore First Tokens
         output = output[self.seed_poses:]                       # [CHUNK_LEN, BS, LAT_DIM]
@@ -313,92 +316,4 @@ class SeedPoseEncoder(nn.Module):
 
     def forward(self, x):       # [BS, SEED_POSES, POSE_DIM]
         x = self.seed_embed(x)  # [BS, SEED_POSES, LAT`DIM]
-        return x
-    
-class LinearNorm(nn.Module):
-    """ LinearNorm Projection """
-
-    def __init__(self, in_features, out_features, bias=False):
-        super(LinearNorm, self).__init__()
-        self.linear = nn.Linear(in_features, out_features, bias)
-
-        nn.init.xavier_uniform_(self.linear.weight)
-        if bias:
-            nn.init.constant_(self.linear.bias, 0.0)
-    
-    def forward(self, x):
-        x = self.linear(x)
-        return x
-    
-class GlobalContextEncoder(nn.Module):
-    def __init__(self, latent_dim):
-        super(GlobalContextEncoder, self).__init__()
-        # self.global_processor
-        self.latent_dim = latent_dim
-        self.feature_wise_affine = LinearNorm(self.latent_dim, 2 * self.latent_dim)
-
-    def forward(self, x):
-        x = self.feature_wise_affine(x)
-        gammas, betas = torch.split(x, self.latent_dim, dim=-1)
-        return gammas, betas
-    
-class FiLM(nn.Module):
-    """
-    A Feature-wise Linear Modulation Layer from
-    'FiLM: Visual Reasoning with a General Conditioning Layer'
-    , extended to 'TADAM: Task dependent adaptive metric for improved few-shot learning'
-    """
-    def __init__(self):
-        super(FiLM, self).__init__()
-        self.s_gamma = nn.Parameter(torch.ones(1,), requires_grad=True)
-        self.s_beta = nn.Parameter(torch.ones(1,), requires_grad=True)
-
-    def forward(self, x, gammas, betas):
-        """
-        x -- [B, T, H]
-        gammas -- [B, 1, H]
-        betas -- [B, 1, H]
-        """
-        gammas = self.s_gamma * gammas.expand_as(x)
-        betas = self.s_beta * betas.expand_as(x)
-        return (gammas + 1.0) * x + betas
-
-      
-class LocalFilm(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.local_transformer = LocalTransformer()
-        self.film = FiLM()
-
-    def forward(self,  gammas, betas, xseq):
-        xseq = xseq.permute(1, 0, 2)                            # [BS, CHUNK_LEN, LAT_DIM]
-        xseq = self.local_transformer(xseq)                     # [BS, CHUNK_LEN, LAT_DIM]
-        xseq = self.film(xseq, gammas, betas)                   # [BS, CHUNK_LEN, LAT_DIM]
-        xseq = xseq.permute(1, 0, 2)                            # [CHUNK_LEN, BS, LAT_DIM]
-        return xseq
-    
-class GlobalFilm(nn.Module):
-    def __init__(self, num_heads, ff_size, activation, num_layers, dropout, latent_dim):
-        super().__init__()
-        self.num_heads = num_heads
-        self.ff_size = ff_size
-        self.activation = activation
-        self.num_layers = num_layers
-        self.dropout = dropout
-        self.latent_dim = latent_dim
-        self.seqTransEncoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(
-                                                        d_model=self.latent_dim,
-                                                        nhead=self.num_heads,
-                                                        dim_feedforward=self.ff_size,
-                                                        dropout=self.dropout,
-                                                        activation=self.activation),
-                                                        num_layers=4)  
-        self.film = FiLM()
-
-    def forward(self,  gammas, betas, x):
-        x = self.seqTransEncoder(x)      # [CHUNK_LEN+SEED_POSES, BS, LAT_DIM] 
-        x = x.permute(1, 0, 2)           # [BS, CHUNK_LEN+SEED_POSES, LAT_DIM] 
-        x = self.film(x, gammas, betas)  # [BS, CHUNK_LEN+SEED_POSES, LAT_DIM] 
-        x = x.permute(1, 0, 2)           # [CHUNK_LEN+SEED_POSES, BS, LAT_DIM] 
         return x
