@@ -165,9 +165,11 @@ class Genea2023(data.Dataset):
             wavlm_reps = np.expand_dims(wavlm_reps, 1)                                                      # [WAVLM_DIM, 1, CHUNK_LEN]
             wavlm_reps = np.expand_dims(wavlm_reps, 0)                                                      # [1, WAVLM_DIM, 1, CHUNK_LEN]
             return signal, wavlm_reps
+        else:  
+            return self.__compute_audiofeats(signal)
         
-        else:     
-            
+    def __compute_audiofeats(self, signal):
+           
             # MFCCs
             mfcc_vectors = mfcc(signal, winlen=0.06, winstep= (1/self.fps), samplerate=self.sr, numcep=27, nfft=5000)
 
@@ -228,8 +230,6 @@ class Genea2023(data.Dataset):
         self.vel_mean = np.load(os.path.join(statspath, 'velrotpos_Mean.npy'))
 
     def gettestbatch(self, num_samples):
-        # TODO: Merge with rot6dvel and solve issues with MFCC support
-        assert self.use_wavlm == True, 'Wavlm is required for this branch. If you wish to use mfcc inputs checkout rot6dvel'
         max_length = max(self.frames[:num_samples])
         max_length = max_length + self.window - max_length%self.window # increase length so it can be divisible by window
         batch_audio = []
@@ -257,13 +257,14 @@ class Genea2023(data.Dataset):
 
             if self.use_vad:
                 # Cut Chunk
-                vad_vals_ = np.load(os.path.join(self.vad_path,self.takes[i][0]+'.npy'))
-                vad_vals = np.zeros(max_length)
-                vad_vals[:vad_vals_.shape[0]] = vad_vals_                                           # [CHUNK_LEN, ]          
+                vad_val_ = np.load(os.path.join(self.vad_path,self.takes[i][0]+'.npy'))
+                vad_val = np.zeros(max_length)
+                vad_val[:vad_val_.shape[0]] = vad_val_                                           # [CHUNK_LEN, ]          
 
                 # Reshape
-                vad_vals = np.expand_dims(vad_vals, 1)                                              # [CHUNK_LEN, 1]
-                vad_vals = np.transpose(vad_vals, (1,0))                                            # [1, CHUNK_LEN]
+                vad_val = np.expand_dims(vad_val, 1)                                              # [CHUNK_LEN, 1]
+                vad_val = np.transpose(vad_val, (1,0))                                            # [1, CHUNK_LEN]
+                vad_vals.append(vad_val)
 
             # Get text file
             text_feats = []
