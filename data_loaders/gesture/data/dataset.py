@@ -40,7 +40,7 @@ class Genea2023(data.Dataset):
         self.vel_std = np.array([ item if item != 0 else 1 for item in self.vel_std ])
         self.rot6dpos_std = np.array([ item if item != 0 else 1 for item in self.rot6dpos_std ])
 
-        if self.split in ['trn', 'val']:
+        if self.split in ['train', 'val']:
             self.motionpath = os.path.join(srcpath, 'motion_npy_rotpos')
             self.motionpath_rot6d = os.path.join(srcpath, 'motion_npy_rot6dpos')
             self.frames = np.load(os.path.join(srcpath, 'rotpos_frames.npy'))
@@ -99,7 +99,7 @@ class Genea2023(data.Dataset):
         if self.use_vad:
             vad = self.__getvad(file_idx, sample)
         else:
-            vad = np.ones(1,int(self.window))     # Dummy
+            vad = np.ones(int(self.window))     # Dummy
         return motion, text, self.window, audio, audio_rep, seed_poses, vad
 
     def __len__(self):
