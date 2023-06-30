@@ -8,7 +8,7 @@ import librosa
 import torch.nn.functional as F
 
 class Genea2023(data.Dataset):
-    def __init__(self, name, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False, use_vad=False):
+    def __init__(self, name, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False, use_vad=False, vadfromtext=False):
 
         self.split = split
         if self.split=='train':
@@ -64,6 +64,8 @@ class Genea2023(data.Dataset):
         self.use_vad = use_vad
         if self.use_vad:
             self.vad_path = os.path.join(srcpath, "vad")
+        self.vadfromtext = vadfromtext
+        if self.vadfromtext: print('Getting speech activity from text')
 
         with open(os.path.join(srcpath, '../metadata.csv')) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
@@ -95,9 +97,10 @@ class Genea2023(data.Dataset):
         take_name = self.takes[file_idx][0]
         motion, seed_poses = self.__getmotion( file_idx, sample)
         audio, audio_rep = self.__getaudiofeats(file_idx, sample)
-        n_text, text, tokens = self.__gettext(file_idx, sample)
+        n_text, text, tokens, vad = self.__gettext(file_idx, sample)
         if self.use_vad:
-            vad = self.__getvad(file_idx, sample)
+            if not self.vadfromtext:
+                vad = self.__getvad(file_idx, sample)
         else:
             vad = np.ones(int(self.window))     # Dummy
         return motion, text, self.window, audio, audio_rep, seed_poses, vad
@@ -190,7 +193,15 @@ class Genea2023(data.Dataset):
         end = self.search_time(file, sample*self.step + self.window)
         text = [ word[-1] for word in file[begin: end] ]
         tokens = self.__gentokens(text)
-        return len(text), ' '.join(text), tokens
+        vad = None
+        if self.vadfromtext:
+            times = [(np.floor(word[0] - sample*self.step).astype(int), np.ceil(word[1] - sample*self.step).astype(int)) for word in file[begin: end]]
+            vad = np.zeros(self.window)
+            for (i, f) in times:
+                vad[i:f] = 1
+            vad = np.expand_dims(vad, 1)     # [CHUNK_LEN, 1]
+            vad = np.transpose(vad, (1,0))   # [1, CHUNK_LEN]
+        return len(text), ' '.join(text), tokens, vad
     
     def __gentokens(self, text):
         tokens = [ word+'/OTHER' for word in text]

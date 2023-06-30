@@ -22,6 +22,7 @@ runcontainer.txt
 __MACOSX/
 .vscode/
 speechbrain/pretrained*
+GENEA23*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

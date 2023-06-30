@@ -109,6 +109,8 @@ def add_data_options(parser):
                        help="Use wavlm representations.")
     group.add_argument("--use_vad", default=False, type=bool,
                        help="Use vad speech indicator values.")
+    group.add_argument("--vadfromtext", default=False, type=bool,
+                       help="Get vad speech indicator values from text.")
 
 def add_training_options(parser):
     group = parser.add_argument_group('training')
