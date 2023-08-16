@@ -12,6 +12,7 @@ from train.training_loop import TrainLoop
 from data_loaders.get_data import get_dataset_loader
 from utils.model_util import create_model_and_diffusion
 from train.train_platforms import ClearmlPlatform, TensorboardPlatform, NoPlatform  # required for the eval operation
+import numpy as np
 
 def main():
     args = train_args()
@@ -30,6 +31,13 @@ def main():
     with open(args_path, 'w') as fw:
         json.dump(vars(args), fw, indent=4, sort_keys=True)
 
+    if args.wandb:
+        projectname = os.path.basename(os.path.normpath(args.save_dir))
+        import wandb
+        wandb.login(anonymous="allow")
+        wandb.init(project='debug_training_loop', config=vars(args))
+        args.wandb = wandb
+
     dist_util.setup_dist(args.device)
 
     print("creating data loader...")
@@ -42,7 +50,17 @@ def main():
 
     print('Total params: %.2fM' % (sum(p.numel() for p in model.parameters_wo_clip()) / 1000000.0))
     print("Training...")
-    TrainLoop(args, train_platform, model, diffusion, data).run_loop()
+    debugemb = False
+    if debugemb:
+        debugsnps = TrainLoop(args, train_platform, model, diffusion, data).run_debugemb()
+        names = ['seed','text','timestep','audio','vad','poses']
+        for i, debugnp in enumerate(debugsnps):
+            print('------------------')
+            print(debugnp)
+            np.save(os.path.join(args.save_dir, names[i]+'.npy'), debugnp[1])
+
+    else:
+        TrainLoop(args, train_platform, model, diffusion, data).run_loop()
     train_platform.close()
 
 if __name__ == "__main__":

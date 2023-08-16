@@ -8,17 +8,20 @@ import librosa
 import torch.nn.functional as F
 
 class Genea2023(data.Dataset):
-    def __init__(self, name, split='train', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False, use_vad=False, vadfromtext=False):
+    def __init__(self, name, split='trn', datapath='./dataset/Genea2023/', step=30, window=80, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False, use_vad=False, vadfromtext=False):
 
         self.split = split
-        if self.split=='train':
-            srcpath = os.path.join(datapath, 'trn/main-agent/')
-        elif self.split in ['val']:
-            srcpath = os.path.join(datapath, 'val/main-agent/')
-        elif self.split == 'tst':
-            srcpath = os.path.join(datapath, 'tst/main-agent/')
-        else:
-            raise NotImplementedError
+        if self.split not in ['trn', 'val', 'tst']:
+            raise ValueError('Split not recognized')
+        srcpath = os.path.join(datapath, self.split, 'main-agent/')
+        #if self.split=='train':
+        #    srcpath = os.path.join(datapath, 'trn/main-agent/')
+        #elif self.split in ['val']:
+        #    srcpath = os.path.join(datapath, 'val/main-agent/')
+        #elif self.split == 'tst':
+        #    srcpath = os.path.join(datapath, 'tst/main-agent/')
+        #else:
+        #    raise NotImplementedError
 
         if use_wavlm:
             self.sr = 16000
@@ -40,7 +43,7 @@ class Genea2023(data.Dataset):
         self.vel_std = np.array([ item if item != 0 else 1 for item in self.vel_std ])
         self.rot6dpos_std = np.array([ item if item != 0 else 1 for item in self.rot6dpos_std ])
 
-        if self.split in ['train', 'val']:
+        if self.split in ['trn', 'val']:
             self.motionpath = os.path.join(srcpath, 'motion_npy_rotpos')
             self.motionpath_rot6d = os.path.join(srcpath, 'motion_npy_rot6dpos')
             self.frames = np.load(os.path.join(srcpath, 'rotpos_frames.npy'))
@@ -310,3 +313,19 @@ class Genea2023(data.Dataset):
 
         # Attention: this is not collate-ready!
         return motion, batch_text, self.window, batch_audio, batch_audio_rep, seed_poses, max_length, vad_vals
+    
+    def getvalbatch(self, num_takes, index):
+        # Get batch of data from the validation set, index refer to the chunk that you want to get
+        # Example: index = 0 and num_takes = 10 will return the first chunk of the first 10 takes
+        # index = 5 and num_takes = 30 will return the moment starting at 5*num_frames (120 by default) and ending at 6*num_frames of the first 30 takes
+        # num_takes = batch_size
+        batch = []
+        assert num_takes <= len(self.takes)
+        # for each take
+        for take in np.arange(num_takes):
+            # get the corresponding index to call __getitem__
+            sampleindex = self.samples_cumulative[take-1] + index if take != 0 else index
+            # check if the index is from the take and call __getitem__
+            out = self.__getitem__(sampleindex) if sampleindex <= self.samples_per_file[take] + sampleindex - index else None
+            batch.append(out)
+        return batch

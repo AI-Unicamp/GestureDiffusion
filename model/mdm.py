@@ -43,7 +43,8 @@ class MDM(nn.Module):
         # VAD
         self.use_vad = kargs.get('use_vad', False)
         if self.use_vad:
-            self.vad_lookup = nn.Embedding(2, self.latent_dim)
+            vad_lat_dim = int(self.latent_dim/16)
+            self.vad_lookup = nn.Embedding(2, vad_lat_dim)
             print('Using VAD')
 
         # Seed Pose Encoder
@@ -62,7 +63,8 @@ class MDM(nn.Module):
         print('Using Audio Features:')
         if self.mfcc_input:
             self.mfcc_dim = 26
-            self.audio_feat_dim = self.mfcc_dim
+            self.audio_feat_dim = 64
+            self.wavlm_encoder = nn.Linear(26, self.audio_feat_dim)
             print('Selected Features: MFCCs')
         if self.use_wav_enc:
             self.wav_enc_dim = 32 
@@ -70,7 +72,7 @@ class MDM(nn.Module):
             print('Selected Features: WavEncoder Representations')
             self.wav_encoder = WavEncoder()
         if self.use_wavlm:
-            self.wavlm_proj_dim = 64
+            self.wavlm_proj_dim = self.latent_dim*2
             self.audio_feat_dim = self.wavlm_proj_dim
             self.wavlm_encoder = nn.Linear(768, self.audio_feat_dim)
             print('Selected Features: WavLM Representations')
@@ -81,7 +83,8 @@ class MDM(nn.Module):
         # Cross-Local Attention
         self.cl_head=8
         if self.use_vad:
-            self.project_to_lat = nn.Linear(self.latent_dim * 3 + self.audio_feat_dim, self.latent_dim)
+            #self.project_to_lat = nn.Linear(self.latent_dim * 3 + self.audio_feat_dim, self.latent_dim)
+            self.project_to_lat = nn.Linear(vad_lat_dim + self.audio_feat_dim + self.latent_dim*2, self.latent_dim)
         else:
             self.project_to_lat = nn.Linear(self.latent_dim * 2 + self.audio_feat_dim, self.latent_dim)
         self.cross_local_attention = LocalAttention(
@@ -116,6 +119,27 @@ class MDM(nn.Module):
 
         # Unused?
         self.rot2xyz = Rotation2xyz(device='cpu', dataset=self.dataset)
+
+        self.log_train = False
+        self.batch_log = {'text': [], 
+                          'vad': [],
+                          'seed': [],
+                          'timestep': [], 
+                          'audio': [],
+                          'poses': [], 
+                          'fg_embs': [], 
+                          'coa_embs': [], 
+                          'embs': [],
+                          'audiovad': []}
+        #self.log_seed = []
+        #self.log_text = []
+        #self.log_timestep = []
+        #self.log_audio = []
+        #self.log_vad = []
+        #self.log_poses = []
+        #self.log_fg_embs = []
+        #self.log_coa_embs = []
+        #self.log_embs = []
 
     def forward(self, x, timesteps, y=None):
         """
@@ -153,6 +177,9 @@ class MDM(nn.Module):
         # Audio Embeddings
         if self.mfcc_input:                                     # TODO: is it actually the raw mfccs? 
             emb_audio = y['audio_rep']                          # [BS, MFCC_DIM, 1, CHUNK_LEN]
+            interp_reps = emb_audio.permute(0, 3, 2, 1)     # [BS, CHUNK_LEN, 1, 768]
+            emb_audio = self.wavlm_encoder(interp_reps)         # [BS, CHUNK_LEN, 1, WAVLM_PROJ_DIM]
+            emb_audio = emb_audio.permute(0, 3, 2, 1)         # [BS, WAVLM_PROJ_DIM, 1, CHUNK_LEN] 
         elif self.use_wav_enc:
             emb_audio = self.wav_encoder(y['audio'])            # [BS, WAV_ENC_DIM, 1, CHUNK_LEN]
             raise NotImplementedError                           # TODO: Resolve CNNs
@@ -160,7 +187,7 @@ class MDM(nn.Module):
             interp_reps = y['audio_rep']                        # [BS, 768, 1, CHUNK_LEN]
             interp_reps = interp_reps.permute(0, 3, 2, 1)     # [BS, CHUNK_LEN, 1, 768]
             emb_audio = self.wavlm_encoder(interp_reps)         # [BS, CHUNK_LEN, 1, WAVLM_PROJ_DIM]
-            emb_audio = emb_audio.permute(0, 3, 2, 1)         # [BS, WAVLM_PROJ_DIM, 1, CHUNK_LEN]
+            emb_audio = emb_audio.permute(0, 3, 2, 1)         # [BS, WAVLM_PROJ_DIM, 1, CHUNK_LEN]     
         else:
             raise NotImplementedError
         emb_audio = emb_audio.squeeze(2)                        # [BS, AUDIO_DIM, CHUNK_LEN], (AUDIO_DIM = MFCC_DIM or WAV_ENC_DIM or WAVLM_PROJ_DIM)
@@ -249,6 +276,43 @@ class MDM(nn.Module):
 
         # Linear Output Feature Pass
         output = self.output_process(output)                    # [BS, POSE_DIM, 1, CHUNK_LEN]
+
+        if self.log_train:
+            
+            if self.use_text:
+                mean = torch.mean(emb_text, dim=1) #emb_text: [BS, TEXT_DIM]
+                self.batch_log['text'] = mean.detach().cpu().numpy()
+
+            if self.use_vad:
+                mean = torch.mean(torch.mean(emb_vad, dim=0), dim=1)  #emb_vad: [CHUNK_LEN, BS, LAT_DIM]  
+                self.batch_log['vad'] = mean.detach().cpu().numpy()
+
+            mean = torch.mean(emb_seed, dim=1)     #emb_seed: [BS, LAT_DIM - TEXT_DIM]
+            self.batch_log['seed'] = mean.detach().cpu().numpy()
+
+            mean = torch.mean(emb_t, dim=2)        #emb_t: [1, BS, LAT_DIM]
+            self.batch_log['timestep'] = mean.detach().cpu().numpy()
+
+            mean = torch.mean(torch.mean(emb_audio, dim=0), dim=1)    #emb_audio: [CHUNK_LEN, BS, AUDIO_DIM]
+            self.batch_log['audio'] = mean.detach().cpu().numpy()
+
+            mean = torch.mean(torch.mean(emb_pose, dim=0), dim=1)     #emb_pose: [CHUNK_LEN, BS, LAT_DIM]
+            self.batch_log['poses'] = mean.detach().cpu().numpy()
+
+            #mean = torch.mean(torch.mean(audiovad, dim=0), dim=1)     # [CHUNK_LEN, BS, AUDIO_DIM]
+            #self.batch_log['audiovad'] = mean.detach().cpu().numpy()
+
+            #std, mean = torch.std_mean(fg_embs, dim=1)     # fg embeddings: [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM]
+            #self.log_fg_embs = [ std.detach().cpu().numpy(), mean.detach().cpu().numpy() ]
+            #self.batch_log['fg_embs'] = self.log_fg_embs
+#
+            #std, mean = torch.std_mean(coa_embs, dim=1)      # coa embeddings: [1, BS, LAT_DIM]
+            #self.log_coa_embs = [ std.detach().cpu().numpy(), mean.detach().cpu().numpy() ]
+            #self.batch_log['coa_embs'] = self.log_coa_embs
+
+            std, mean = torch.std_mean(torch.mean(embs, dim=0), dim=0)     # embeddings: [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM + LAT_DIM] of 2* LAT_DIM If no VAD
+            self.log_embs = [ std.detach().cpu().numpy(), mean.detach().cpu().numpy() ]
+            self.batch_log['embs'] = self.log_embs
 
         return output
 
