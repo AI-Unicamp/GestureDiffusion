@@ -43,7 +43,7 @@ class MDM(nn.Module):
         # VAD
         self.use_vad = kargs.get('use_vad', False)
         if self.use_vad:
-            vad_lat_dim = int(self.latent_dim/16)
+            vad_lat_dim = int(self.latent_dim)
             self.vad_lookup = nn.Embedding(2, vad_lat_dim)
             print('Using VAD')
 
@@ -72,7 +72,7 @@ class MDM(nn.Module):
             print('Selected Features: WavEncoder Representations')
             self.wav_encoder = WavEncoder()
         if self.use_wavlm:
-            self.wavlm_proj_dim = self.latent_dim*2
+            self.wavlm_proj_dim = 64
             self.audio_feat_dim = self.wavlm_proj_dim
             self.wavlm_encoder = nn.Linear(768, self.audio_feat_dim)
             print('Selected Features: WavLM Representations')
@@ -83,8 +83,8 @@ class MDM(nn.Module):
         # Cross-Local Attention
         self.cl_head=8
         if self.use_vad:
-            #self.project_to_lat = nn.Linear(self.latent_dim * 3 + self.audio_feat_dim, self.latent_dim)
-            self.project_to_lat = nn.Linear(vad_lat_dim + self.audio_feat_dim + self.latent_dim*2, self.latent_dim)
+            self.project_to_lat = nn.Linear(self.latent_dim * 3 + self.audio_feat_dim, self.latent_dim)
+            #self.project_to_lat = nn.Linear(vad_lat_dim + self.audio_feat_dim + self.latent_dim*2, self.latent_dim)
         else:
             self.project_to_lat = nn.Linear(self.latent_dim * 2 + self.audio_feat_dim, self.latent_dim)
         self.cross_local_attention = LocalAttention(

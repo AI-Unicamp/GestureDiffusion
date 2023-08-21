@@ -45,6 +45,8 @@ class PoseEncoderConv(nn.Module):
             in_channels = 800
         elif length == 90:
             in_channels = 1280
+        elif length == 120:
+            in_channels = 1760
         else:
             assert False
 
@@ -77,6 +79,8 @@ class PoseDecoderConv(nn.Module):
             out_channels = 240
         elif length == 90:
             out_channels = 360
+        elif length == 120:
+            out_channels = 480
         else:
             assert False
 

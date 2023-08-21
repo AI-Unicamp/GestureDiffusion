@@ -31,6 +31,7 @@ def main():
     if args.dataset in ['genea2023', 'genea2023+']:
         fps = 30
         n_joints = 83
+        #TODO: change to receive args.bvh_reference_file
         bvhreference = bvhsdk.ReadFile('./dataset/Genea2023/trn/main-agent/bvh/trn_2023_v0_000_main-agent.bvh', skipmotion=True)
     else:
         raise NotImplementedError
