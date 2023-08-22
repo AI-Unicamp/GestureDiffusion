@@ -16,7 +16,7 @@ from diffusion.resample import LossAwareSampler, UniformSampler
 from tqdm import tqdm
 from diffusion.resample import create_named_schedule_sampler
 from data_loaders.humanml.networks.evaluator_wrapper import EvaluatorMDMWrapper
-from eval import eval_humanml, eval_humanact12_uestc
+from eval import eval_humanml, eval_humanact12_uestc, eval_genea
 from data_loaders.get_data import get_dataset_loader
 import utils.rotation_conversions as geometry
 
@@ -47,17 +47,7 @@ class TrainLoop:
         self.lr_anneal_steps = args.lr_anneal_steps
         self.log_wandb = args.wandb
         if self.log_wandb:
-            print('ALLLLLLOW')
-            import wandb
-            print(wandb)
-            print(args.wandb)
-            self.valdata = get_dataset_loader(name=args.dataset, 
-                                              batch_size=args.batch_size, 
-                                              num_frames=args.num_frames, 
-                                              step=args.num_frames, #no overlap
-                                              use_wavlm=args.use_wavlm, 
-                                              use_vad=args.use_vad, 
-                                              vadfromtext=args.vadfromtext)
+            self.genea_evaluator = eval_genea.GeneaEvaluator(args, self.model, self.diffusion)
 
         self.step = 0
         self.resume_step = 0
@@ -236,53 +226,9 @@ class TrainLoop:
 
     def valwandb(self):
         assert self.log_wandb
-        # get number of samples
-        totalsamples = len(self.valdata.dataset.takes)
-        chunks = np.min(self.valdata.dataset.samples_per_file)
-        print('Evaluating validation set')
-        for idx in tqdm(range(chunks)):
-            batch = self.valdata.dataset.getvalbatch(idx)
-            gt_motion, model_kwargs = self.valdata.collate_fn(batch) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
-            model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [num_samples(bs), njoints, 1, seed_len]
-            if idx > 0:
-                model_kwargs['y']['seed'] = sample_out[...,-self.valdata.dataset.n_seed_poses:]
-            sample_fn = self.diffusion.p_sample_loop
-            sample_out = sample_fn(
-                self.model,
-                (self.num_samples, self.model.njoints, self.model.nfeats, self.num_frames),
-                clip_denoised=False,
-                model_kwargs=model_kwargs,
-                skip_timesteps=0,  # 0 is the default value - i.e. don't skip any step
-                init_image=None,
-                progress=True,
-                dump_steps=None,
-                noise=None,
-                const_noise=False,
-            ) # [num_samples(bs), njoints, 1, chunk_len]
-
-            sample = self.valdata.dataset.inv_transform(sample_out.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
-            gt_motion = self.valata.dataset.inv_transform(gt_motion.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
-
-            if self.dataset == 'genea2023+':
-                idx_rotations = np.asarray([ [i*9, i*9+1, i*9+2, i*9+3, i*9+4, i*9+5] for i in range(self.model.n_joints) ]).flatten()
-                idx_positions = np.asarray([ [i*9+6, i*9+7, i*9+8] for i in range(self.model.n_joints) ]).flatten()
-                sample, sample_rot = sample[..., idx_positions], sample[..., idx_rotations] # sample_rot: [num_samples(bs), 1, chunk_len, n_joints*6]
-                
-                #rotations
-                sample_rot = sample_rot.view(sample_rot.shape[:-1] + (-1, 6)) # [num_samples(bs), 1, chunk_len, n_joints, 6]
-                sample_rot = geometry.rotation_6d_to_matrix(sample_rot) # [num_samples(bs), 1, chunk_len, n_joints, 3, 3]
-                sample_rot = geometry.matrix_to_euler_angles(sample_rot, "ZXY")[..., [1, 2, 0] ]*180/np.pi # [num_samples(bs), 1, chunk_len, n_joints, 3]
-                sample_rot = sample_rot.view(-1, *sample_rot.shape[2:]).permute(0, 2, 3, 1) # [num_samples(bs)*chunk_len, n_joints, 3]
-
-                #ground truth
-                gt_motion_pos, gt_motion_rot = gt_motion[..., idx_positions], gt_motion[..., idx_rotations]
-                gt_motion_rot = gt_motion_rot.view(gt_motion_rot.shape[:-1] + (-1, 6)) # [num_samples(bs), 1, chunk_len, n_joints, 6]
-                gt_motion_rot = geometry.rotation_6d_to_matrix(gt_motion_rot) # [num_samples(bs), 1, chunk_len, n_joints, 3, 3]
-                gt_motion_rot = geometry.matrix_to_euler_angles(gt_motion_rot, "ZXY")[..., [1, 2, 0] ]*180/np.pi # [num_samples(bs), 1, chunk_len, n_joints, 3]
-                gt_motion_rot = gt_motion_rot.view(-1, *gt_motion_rot.shape[2:]).permute(0, 2, 3, 1)
-
-                gt_motion_pos = gt_motion_pos.view(gt_motion_pos.shape[:-1] + (-1, 3))
-                gt_motion_pos = gt_motion_pos.view(-1, *gt_motion_pos.shape[2:]).permute(0, 2, 3, 1)
+        fgd = self.genea_evaluator.eval()
+        self.log_wandb.wandb.log({'FGD Validation': fgd})
+        
 
     def run_debugemb(self):
         print(f'Starting debug embedding')

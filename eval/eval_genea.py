@@ -37,6 +37,7 @@ class GeneaEvaluator:
 
 
     def eval(self, samples=None, chunks=None):
+        print('Starting evaluation...')
         n_samples = samples if samples else len(self.data.takes)
         n_chunks = chunks if chunks else np.min(self.data.samples_per_file)
         rot, gt_rot, pos, gt_pos  = self.sampleval(n_samples, n_chunks)
@@ -51,25 +52,25 @@ class GeneaEvaluator:
             listpos.append(mp.posfrombvh(bvhreference))
             # Transform to BVH and get positions of ground truth motion
             # This is just a sanity check since we could get directly from the npy files
-            bvhreference = mp.tobvh(self.bvhreference, gt_rot[i], gt_pos[i])
-            listposgt.append(mp.posfrombvh(bvhreference))
+            #bvhreference = mp.tobvh(self.bvhreference, gt_rot[i], gt_pos[i])
+            #listposgt.append(mp.posfrombvh(bvhreference))
 
         # "Direct" ground truth positions
         real_val = make_tensor(f'./dataset/Genea2023/val/main-agent/motion_npy_rotpos', self.args.num_frames, max_files=n_samples, n_chunks=n_chunks).to(self.device)
 
-        gt_data = self.fgd_prep(listposgt).to(self.device)
+        #gt_data = self.fgd_prep(listposgt).to(self.device)
         test_data = self.fgd_prep(listpos).to(self.device)
 
         fgd_on_feat = self.run_fgd(real_val, test_data)
         print(f'Sampled to validation: {fgd_on_feat:8.3f}')
 
-        fgd_on_feat = self.run_fgd(gt_data, test_data)
-        print(f'Sampled to validation from pipeline: {fgd_on_feat:8.3f}')
+        #fgd_on_feat = self.run_fgd(gt_data, test_data)
+        #print(f'Sampled to validation from pipeline: {fgd_on_feat:8.3f}')
 
-        fgd_on_feat = self.run_fgd(real_val, gt_data)
-        print(f'Validation from pipeline to validation (should be zero): {fgd_on_feat:8.3f}')
+        #fgd_on_feat = self.run_fgd(real_val, gt_data)
+        #print(f'Validation from pipeline to validation (should be zero): {fgd_on_feat:8.3f}')
         
-        return None
+        return fgd_on_feat
 
     def sampleval(self, samples=None, chunks=None):
         assert chunks <= np.min(self.data.samples_per_file) # assert that we don't go over the number of chunks per file
