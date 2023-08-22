@@ -29,10 +29,11 @@ def rot6d_to_euler(data):
     # Output shape [num_samples(bs) * chunk_len, n_joints, 3]
     n_joints = 83
     assert data.shape[-1] == n_joints*6
-    sample_rot = sample_rot.view(sample_rot.shape[:-1] + (-1, 6))                   # [num_samples(bs), 1, chunk_len, n_joints, 6]
+    sample_rot = data.view(data.shape[:-1] + (-1, 6))                   # [num_samples(bs), 1, chunk_len, n_joints, 6]
     sample_rot = geometry.rotation_6d_to_matrix(sample_rot)                         # [num_samples(bs), 1, chunk_len, n_joints, 3, 3]
     sample_rot = geometry.matrix_to_euler_angles(sample_rot, "ZXY")[..., [1, 2, 0] ]*180/np.pi # [num_samples(bs), 1, chunk_len, n_joints, 3]
-    sample_rot = sample_rot.view(-1, *sample_rot.shape[2:]).permute(0, 2, 3, 1)     # [num_samples(bs), n_joints, 3, chunk_len]
+    sample_rot = sample_rot.view(-1, *sample_rot.shape[2:]).permute(0, 2, 3, 1).squeeze()    # [num_samples(bs), n_joints, 3, chunk_len]
+    return sample_rot
 
 def tobvh(bvhreference, rotation, position=None):
     # Converts to bvh format
@@ -43,7 +44,7 @@ def tobvh(bvhreference, rotation, position=None):
     for j, joint in enumerate(bvhreference.getlistofjoints()):
         joint.rotation = rotation[:, j, :]
         joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
-    if position:
+    if position.any():
         position = position.transpose(2, 0, 1) # [frames, njoints, 3]
         bvhreference.root.translation = position[:, 0, :]
     return bvhreference
@@ -51,7 +52,7 @@ def tobvh(bvhreference, rotation, position=None):
 def posfrombvh(bvh):
     # Extracts positions from bvh
     # returns a numpy array shaped [frames, njoints, 3]
-    position = np.zeros((bvh.frames, bvh.njoints * 3))
+    position = np.zeros((bvh.frames, len(bvh.getlistofjoints()) * 3))
     # This way takes advantage of the implementarion of getPosition (16.9 seconds ~4000 frames)
     for frame in range(bvh.frames):
         for i, joint in enumerate(bvh.getlistofjoints()):
@@ -61,20 +62,21 @@ def posfrombvh(bvh):
 
 def filter_and_interp(rotation, position, num_frames=120, chunks=None):
     # Smooth chunk transitions
+    # 
     n_chunks = chunks if chunks else int(rotation.shape[-1]/num_frames)
     inter_range = 10 #interpolation range in frames
     for transition in np.arange(1, n_chunks-1)*num_frames:
-        all_motions[..., transition:transition+2] = np.tile(np.expand_dims(all_motions[..., transition]/2 + all_motions[..., transition-1]/2,-1),2)
-        all_motions_rot[..., transition:transition+2] = np.tile(np.expand_dims(all_motions_rot[..., transition]/2 + all_motions_rot[..., transition-1]/2,-1),2)
+        position[..., transition:transition+2] = np.tile(np.expand_dims(position[..., transition]/2 + position[..., transition-1]/2,-1),2)
+        rotation[..., transition:transition+2] = np.tile(np.expand_dims(rotation[..., transition]/2 + rotation[..., transition-1]/2,-1),2)
         for i, s in enumerate(np.linspace(0, 1, inter_range-1)):
             forward = transition-inter_range+i
             backward = transition+inter_range-i
-            all_motions[..., forward] = all_motions[..., forward]*(1-s) + all_motions[:, :, :, transition-1]*s  
-            all_motions[..., backward] = all_motions[..., backward]*(1-s) + all_motions[:, :, :, transition]*s
-            all_motions_rot[..., forward] = all_motions_rot[..., forward]*(1-s) + all_motions_rot[:, :, :, transition-1]*s
-            all_motions_rot[..., backward] = all_motions_rot[..., backward]*(1-s) + all_motions_rot[:, :, :, transition]*s
+            position[..., forward] = position[..., forward]*(1-s) + position[:, :, :, transition-1]*s  
+            position[..., backward] = position[..., backward]*(1-s) + position[:, :, :, transition]*s
+            rotation[..., forward] = rotation[..., forward]*(1-s) + rotation[:, :, :, transition-1]*s
+            rotation[..., backward] = rotation[..., backward]*(1-s) + rotation[:, :, :, transition]*s
             
-    all_motions = savgol_filter(all_motions, 9, 3, axis=-1)
-    all_motions_rot = savgol_filter(all_motions_rot, 9, 3, axis=-1)
+    position = savgol_filter(position, 9, 3, axis=-1)
+    rotation = savgol_filter(rotation, 9, 3, axis=-1)
 
-    return all_motions, all_motions_rot
+    return position, rotation

@@ -33,15 +33,19 @@ class GeneaEvaluator:
         self.std = self.data.std[idx_positions]
         self.mean = self.data.mean[idx_positions]
         self.fgd_evaluator = EmbeddingSpaceEvaluator(args.fgd_embedding, args.num_frames, dist_util.dev())
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-    def eval(self):
-        rot, gt_rot, pos, gt_pos  = self.sampleval(chunks=2)
+    def eval(self, samples=None, chunks=None):
+        n_samples = samples if samples else len(self.data.takes)
+        n_chunks = chunks if chunks else np.min(self.data.samples_per_file)
+        rot, gt_rot, pos, gt_pos  = self.sampleval(n_samples, n_chunks)
         pos, rot = mp.filter_and_interp(rot, pos, num_frames=self.args.num_frames)
 
         listpos, listposgt = [], []
         
-        for i in range(len(pos)):
+        print('Converting to BVH and back to get positions...')
+        for i in tqdm(range(len(pos))):
             # Transform to BVH and get positions of sampled motion
             bvhreference = mp.tobvh(self.bvhreference, rot[i], pos[i])
             listpos.append(mp.posfrombvh(bvhreference))
@@ -51,33 +55,32 @@ class GeneaEvaluator:
             listposgt.append(mp.posfrombvh(bvhreference))
 
         # "Direct" ground truth positions
-        real_val = make_tensor(f'./dataset/Genea2023/val/main-agent/motion_npy_rotpos', self.args.num_frames, max_files=64).to(dist_util.dev())
+        real_val = make_tensor(f'./dataset/Genea2023/val/main-agent/motion_npy_rotpos', self.args.num_frames, max_files=n_samples, n_chunks=n_chunks).to(self.device)
 
-        gt_data = self.fgd_prep(listposgt)
-        test_data = self.fgd_prep(listpos)
+        gt_data = self.fgd_prep(listposgt).to(self.device)
+        test_data = self.fgd_prep(listpos).to(self.device)
+
+        fgd_on_feat = self.run_fgd(real_val, test_data)
+        print(f'Sampled to validation: {fgd_on_feat:8.3f}')
 
         fgd_on_feat = self.run_fgd(gt_data, test_data)
         print(f'Sampled to validation from pipeline: {fgd_on_feat:8.3f}')
 
         fgd_on_feat = self.run_fgd(real_val, gt_data)
-        print(f'Sampled to validation: {fgd_on_feat:8.3f}')
-
-        fgd_on_feat = self.run_fgd(real_val, test_data)
         print(f'Validation from pipeline to validation (should be zero): {fgd_on_feat:8.3f}')
         
         return None
 
     def sampleval(self, samples=None, chunks=None):
-        n_samples = samples if samples else len(self.data.takes)
-        n_chunks = chunks if chunks else np.min(self.data.samples_per_file)
-        assert n_chunks <= np.min(self.data.samples_per_file) # assert that we don't go over the number of chunks per file
+        assert chunks <= np.min(self.data.samples_per_file) # assert that we don't go over the number of chunks per file
         allsampledmotion = []
         allsampleposition = []
         allgtmotion = []
         allgtposition = []
         print('Evaluating validation set')
-        for idx in tqdm(range(n_chunks)):
-            batch = self.data.getvalbatch(num_takes=n_samples, index=idx)
+        for idx in range(chunks):
+            print('### Sampling chunk {} of {}'.format(idx+1, chunks))
+            batch = self.data.getvalbatch(num_takes=samples, index=idx)
             gt_motion, model_kwargs = self.dataloader.collate_fn(batch) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
             model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [num_samples(bs), njoints, 1, seed_len]
             if idx > 0:
@@ -85,7 +88,7 @@ class GeneaEvaluator:
             sample_fn = self.diffusion.p_sample_loop
             sample_out = sample_fn(
                 self.model,
-                (n_samples, self.model.njoints, self.model.nfeats, self.args.num_frames),
+                (samples, self.model.njoints, self.model.nfeats, self.args.num_frames),
                 clip_denoised=False,
                 model_kwargs=model_kwargs,
                 skip_timesteps=0,  # 0 is the default value - i.e. don't skip any step
@@ -104,7 +107,7 @@ class GeneaEvaluator:
             sample_pos, sample_rot = mp.split_pos_rot(self.args.dataset, sample)
 
             # Convert numpy array to euler angles
-            if self.args.dataset == 'genea2023':
+            if self.args.dataset == 'genea2023+':
                 gt_rot = mp.rot6d_to_euler(gt_rot)
                 sample_rot = mp.rot6d_to_euler(sample_rot)
 
@@ -115,8 +118,8 @@ class GeneaEvaluator:
 
             allsampledmotion.append(sample_rot.cpu().numpy())
             allgtmotion.append(gt_rot.cpu().numpy())
-            allsampleposition.append(sample_pos.cpu().numpy())
-            allgtposition.append(gt_pos.cpu().numpy())
+            allsampleposition.append(sample_pos.squeeze().cpu().numpy())
+            allgtposition.append(gt_pos.squeeze().cpu().numpy())
 
         allsampledmotion = np.concatenate(allsampledmotion, axis=3)
         allgtmotion = np.concatenate(allgtmotion, axis=3)
