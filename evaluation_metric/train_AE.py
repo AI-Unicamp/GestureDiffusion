@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from torch import optim
 from torch.utils.data import TensorDataset, DataLoader
 
-from embedding_net import EmbeddingNet
+from evaluation_metric.embedding_net import EmbeddingNet
 from tqdm import tqdm
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

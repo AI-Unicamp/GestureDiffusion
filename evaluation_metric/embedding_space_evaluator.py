@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from scipy import linalg
 
-from embedding_net import EmbeddingNet
+from evaluation_metric.embedding_net import EmbeddingNet
 
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)  # ignore warnings

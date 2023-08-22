@@ -15,9 +15,10 @@ from utils.model_util import create_model_and_diffusion, load_model_wo_clip
 
 
 class GeneaEvaluator:
-    def __init__(self, args, model):
+    def __init__(self, args, model, diffusion):
         self.args = args
         self.model = model
+        self.diffusion = diffusion
         self.dataloader = get_dataset_loader(name=args.dataset, 
                                         batch_size=args.batch_size, 
                                         num_frames=args.num_frames, 
@@ -35,25 +36,33 @@ class GeneaEvaluator:
 
 
     def eval(self):
-        rot, gt_rot, pos, gt_pos  = self.sampleval()
-        pos, rot = mp.filter_and_interp(rot, pos, num_frames=self.num_frames)
-        # Transform to BVH and get positions of sampled motion
-        bvhreference = mp.tobvh(self.bvhreference, rot, pos)
-        pos = mp.posfrombvh(bvhreference)
-        # Transform to BVH and get positions of ground truth motion
-        # This is just a sanity check since we could get directly from the npy files
-        bvhreference = mp.tobvh(self.bvhreference, gt_rot, gt_pos)
-        gt_pos = mp.posfrombvh(bvhreference)
+        rot, gt_rot, pos, gt_pos  = self.sampleval(chunks=2)
+        pos, rot = mp.filter_and_interp(rot, pos, num_frames=self.args.num_frames)
+
+        listpos, listposgt = [], []
+        
+        for i in range(len(pos)):
+            # Transform to BVH and get positions of sampled motion
+            bvhreference = mp.tobvh(self.bvhreference, rot[i], pos[i])
+            listpos.append(mp.posfrombvh(bvhreference))
+            # Transform to BVH and get positions of ground truth motion
+            # This is just a sanity check since we could get directly from the npy files
+            bvhreference = mp.tobvh(self.bvhreference, gt_rot[i], gt_pos[i])
+            listposgt.append(mp.posfrombvh(bvhreference))
+
         # "Direct" ground truth positions
         real_val = make_tensor(f'./dataset/Genea2023/val/main-agent/motion_npy_rotpos', self.args.num_frames, max_files=64).to(dist_util.dev())
 
-        fgd_on_feat = self.run_fgd(pos, gt_pos)
+        gt_data = self.fgd_prep(listposgt)
+        test_data = self.fgd_prep(listpos)
+
+        fgd_on_feat = self.run_fgd(gt_data, test_data)
         print(f'Sampled to validation from pipeline: {fgd_on_feat:8.3f}')
 
-        fgd_on_feat = self.run_fgd(pos, real_val)
+        fgd_on_feat = self.run_fgd(real_val, gt_data)
         print(f'Sampled to validation: {fgd_on_feat:8.3f}')
 
-        fgd_on_feat = self.run_fgd(gt_pos, real_val)
+        fgd_on_feat = self.run_fgd(real_val, test_data)
         print(f'Validation from pipeline to validation (should be zero): {fgd_on_feat:8.3f}')
         
         return None
@@ -67,8 +76,8 @@ class GeneaEvaluator:
         allgtmotion = []
         allgtposition = []
         print('Evaluating validation set')
-        for idx in tqdm(range(chunks)):
-            batch = self.data.getvalbatch(idx)
+        for idx in tqdm(range(n_chunks)):
+            batch = self.data.getvalbatch(num_takes=n_samples, index=idx)
             gt_motion, model_kwargs = self.dataloader.collate_fn(batch) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
             model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [num_samples(bs), njoints, 1, seed_len]
             if idx > 0:
@@ -76,7 +85,7 @@ class GeneaEvaluator:
             sample_fn = self.diffusion.p_sample_loop
             sample_out = sample_fn(
                 self.model,
-                (self.num_samples, self.model.njoints, self.model.nfeats, self.num_frames),
+                (n_samples, self.model.njoints, self.model.nfeats, self.args.num_frames),
                 clip_denoised=False,
                 model_kwargs=model_kwargs,
                 skip_timesteps=0,  # 0 is the default value - i.e. don't skip any step
@@ -99,10 +108,10 @@ class GeneaEvaluator:
                 gt_rot = mp.rot6d_to_euler(gt_rot)
                 sample_rot = mp.rot6d_to_euler(sample_rot)
 
-            sample_pos = sample_pos.view(sample.shape[:-1] + (-1, 3))                # [num_samples(bs), 1, chunk_len, n_joints/3, 3]
-            sample_pos = sample_pos.view(-1, *sample.shape[2:]).permute(0, 2, 3, 1) 
-            gt_pos = gt_pos.view(gt_motion.shape[:-1] + (-1, 3))                # [num_samples(bs), 1, chunk_len, n_joints/3, 3]
-            gt_pos = gt_pos.view(-1, *gt_motion.shape[2:]).permute(0, 2, 3, 1)
+            sample_pos = sample_pos.view(sample_pos.shape[:-1] + (-1, 3))                # [num_samples(bs), 1, chunk_len, n_joints/3, 3]
+            sample_pos = sample_pos.view(-1, *sample_pos.shape[2:]).permute(0, 2, 3, 1) 
+            gt_pos = gt_pos.view(gt_pos.shape[:-1] + (-1, 3))                # [num_samples(bs), 1, chunk_len, n_joints/3, 3]
+            gt_pos = gt_pos.view(-1, *gt_pos.shape[2:]).permute(0, 2, 3, 1)
 
             allsampledmotion.append(sample_rot.cpu().numpy())
             allgtmotion.append(gt_rot.cpu().numpy())
@@ -119,15 +128,14 @@ class GeneaEvaluator:
     def fgd_prep(self, data, n_frames=120, stride=None):
         samples = []
         stride = n_frames // 2 if stride is None else stride
-        for i in range(0, len(data) - n_frames, stride):
-            sample = data[i:i+n_frames]
-            sample = (sample - self.mean) / self.std
-            samples.append(sample)
+        for take in data:
+            for i in range(0, len(take) - n_frames, stride):
+                sample = take[i:i+n_frames]
+                sample = (sample - self.mean) / self.std
+                samples.append(sample)
         return torch.Tensor(samples)
 
     def run_fgd(self, gt_data, test_data):
-        gt_data = self.fgd_prep(gt_data)
-        test_data = self.fgd_prep(test_data)
         self.fgd_evaluator.reset()
         self.fgd_evaluator.push_real_samples(gt_data)
         self.fgd_evaluator.push_generated_samples(test_data)
@@ -145,7 +153,7 @@ def main():
     load_model_wo_clip(model, state_dict)
     model.to(dist_util.dev())
     model.eval()  # disable random masking
-    GeneaEvaluator(args, model).eval()
+    GeneaEvaluator(args, model, diffusion).eval()
 
 
 if __name__ == '__main__':
