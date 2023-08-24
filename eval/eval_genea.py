@@ -29,22 +29,19 @@ class GeneaEvaluator:
                                         split='val')
         self.data = self.dataloader.dataset
         self.bvhreference = bvhsdk.ReadFile(args.bvh_reference_file, skipmotion=True)
-        idx_positions, _ = mp.get_indexes('genea2023') # hard-coded 'genea2023' because std and mean vec are computed for this representation
-        self.std = self.data.std[idx_positions]
-        self.mean = self.data.mean[idx_positions]
+        self.idx_positions, self.idx_rotations = mp.get_indexes('genea2023') # hard-coded 'genea2023' because std and mean vec are computed for this representation
         self.fgd_evaluator = EmbeddingSpaceEvaluator(args.fgd_embedding, args.num_frames, dist_util.dev())
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+        
 
     def eval(self, samples=None, chunks=None):
         print('Starting evaluation...')
         n_samples = samples if samples else len(self.data.takes)
         n_chunks = chunks if chunks else np.min(self.data.samples_per_file)
-        rot, gt_rot, pos, gt_pos  = self.sampleval(n_samples, n_chunks)
+        rot, gt_rot, pos, gt_pos, vad  = self.sampleval(n_samples, n_chunks)
         pos, rot = mp.filter_and_interp(rot, pos, num_frames=self.args.num_frames)
 
         listpos, listposgt = [], []
-        
         print('Converting to BVH and back to get positions...')
         for i in tqdm(range(len(pos))):
             # Transform to BVH and get positions of sampled motion
@@ -55,20 +52,10 @@ class GeneaEvaluator:
             #bvhreference = mp.tobvh(self.bvhreference, gt_rot[i], gt_pos[i])
             #listposgt.append(mp.posfrombvh(bvhreference))
 
-        # "Direct" ground truth positions
-        real_val = make_tensor(f'./dataset/Genea2023/val/main-agent/motion_npy_rotpos', self.args.num_frames, max_files=n_samples, n_chunks=n_chunks).to(self.device)
+        # Compute FGD
+        fgd_on_feat = self.fgd(listpos, listposgt, n_samples, n_chunks)
 
-        #gt_data = self.fgd_prep(listposgt).to(self.device)
-        test_data = self.fgd_prep(listpos).to(self.device)
 
-        fgd_on_feat = self.run_fgd(real_val, test_data)
-        print(f'Sampled to validation: {fgd_on_feat:8.3f}')
-
-        #fgd_on_feat = self.run_fgd(gt_data, test_data)
-        #print(f'Sampled to validation from pipeline: {fgd_on_feat:8.3f}')
-
-        #fgd_on_feat = self.run_fgd(real_val, gt_data)
-        #print(f'Validation from pipeline to validation (should be zero): {fgd_on_feat:8.3f}')
         
         return fgd_on_feat
 
@@ -78,6 +65,7 @@ class GeneaEvaluator:
         allsampleposition = []
         allgtmotion = []
         allgtposition = []
+        allvad = []
         print('Evaluating validation set')
         for idx in range(chunks):
             print('### Sampling chunk {} of {}'.format(idx+1, chunks))
@@ -121,25 +109,53 @@ class GeneaEvaluator:
             allgtmotion.append(gt_rot.cpu().numpy())
             allsampleposition.append(sample_pos.squeeze().cpu().numpy())
             allgtposition.append(gt_pos.squeeze().cpu().numpy())
+            if self.args.use_vad:
+                allvad.append(model_kwargs['y']['vad'].cpu().numpy())
 
         allsampledmotion = np.concatenate(allsampledmotion, axis=3)
         allgtmotion = np.concatenate(allgtmotion, axis=3)
         allsampleposition = np.concatenate(allsampleposition, axis=3)
         allgtposition = np.concatenate(allgtposition, axis=3)
+        if self.args.use_vad:
+            allvad = np.concatenate(allvad, axis=1)
 
         return allsampledmotion, allgtmotion, allsampleposition, allgtposition
+
+    def rot_velocity(self):
+        pass
+
+    def 
     
+    def fgd(self, listpos, listposgt=None, n_samples=100, n_chunks=1):
+        # "Direct" ground truth positions
+        real_val = make_tensor(f'./dataset/Genea2023/val/main-agent/motion_npy_rotpos', self.args.num_frames, max_files=n_samples, n_chunks=n_chunks).to(self.device)
+
+        #gt_data = self.fgd_prep(listposgt).to(self.device)
+        test_data = self.fgd_prep(listpos).to(self.device)
+
+        fgd_on_feat = self.run_fgd(real_val, test_data)
+        print(f'Sampled to validation: {fgd_on_feat:8.3f}')
+
+        #fgd_on_feat = self.run_fgd(gt_data, test_data)
+        #print(f'Sampled to validation from pipeline: {fgd_on_feat:8.3f}')
+
+        #fgd_on_feat = self.run_fgd(real_val, gt_data)
+        #print(f'Validation from pipeline to validation (should be zero): {fgd_on_feat:8.3f}')
+        return fgd_on_feat
+
     def fgd_prep(self, data, n_frames=120, stride=None):
+        # Prepare samples for FGD evaluation
         samples = []
         stride = n_frames // 2 if stride is None else stride
         for take in data:
             for i in range(0, len(take) - n_frames, stride):
                 sample = take[i:i+n_frames]
-                sample = (sample - self.mean) / self.std
+                sample = (sample - self.data.mean[self.idx_positions]) / self.data.std[self.idx_positions]
                 samples.append(sample)
         return torch.Tensor(samples)
 
     def run_fgd(self, gt_data, test_data):
+        # Run FGD evaluation on the given data
         self.fgd_evaluator.reset()
         self.fgd_evaluator.push_real_samples(gt_data)
         self.fgd_evaluator.push_generated_samples(test_data)
