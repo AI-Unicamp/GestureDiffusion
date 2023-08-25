@@ -75,7 +75,7 @@ class GeneaEvaluator:
             batch = self.data.getvalbatch(num_takes=samples, index=idx)
             gt_motion, model_kwargs = self.dataloader.collate_fn(batch) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
             model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [num_samples(bs), njoints, 1, seed_len]
-            if idx > 0:
+            if idx > 0 and self.args.seed_poses > 0:
                 model_kwargs['y']['seed'] = sample_out[...,-self.data.n_seed_poses:]
             sample_fn = self.diffusion.p_sample_loop
             sample_out = sample_fn(

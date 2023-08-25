@@ -158,8 +158,8 @@ class TrainLoop:
                 if self.log_wandb:
                     i = self.batch_size*stepcount
                     e = i + self.batch_size
-                    dictlog['text'][i:e] = self.model.batch_log['text']
-                    dictlog['vad'][i:e] = self.model.batch_log['vad']
+                    dictlog['text'][i:e] = self.model.batch_log['text'] if self.model.batch_log['text'] != [] else np.zeros(self.batch_size)
+                    dictlog['vad'][i:e] = self.model.batch_log['vad'] if self.model.batch_log['vad'] != [] else np.zeros(self.batch_size)
                     dictlog['seed'][i:e] = self.model.batch_log['seed']
                     dictlog['timestep'][i:e] = self.model.batch_log['timestep']
                     dictlog['audio'][i:e] = self.model.batch_log['audio']
@@ -186,8 +186,8 @@ class TrainLoop:
 
                         if k in ['step', 'samples'] or '_q' in k:
                             continue
-                        else:
-                            self.train_platform.report_scalar(name=k, value=v, iteration=self.step, group_name='Loss')
+                        #else:
+                        #    self.train_platform.report_scalar(name=k, value=v, iteration=self.step, group_name='Loss')
 
                 if self.step % self.save_interval == 0:
                     self.save()
@@ -199,6 +199,7 @@ class TrainLoop:
                     if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
                         return
                 self.step += 1
+
             if not (not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps):
                 break
 
