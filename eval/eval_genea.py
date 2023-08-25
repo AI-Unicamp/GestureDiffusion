@@ -7,6 +7,7 @@ import torch
 import bvhsdk
 from evaluation_metric.embedding_space_evaluator import EmbeddingSpaceEvaluator
 from evaluation_metric.train_AE import make_tensor
+import matplotlib.pyplot as plt
 
 # Imports for calling from command line
 from utils.parser_util import generate_args
@@ -55,9 +56,11 @@ class GeneaEvaluator:
         # Compute FGD
         fgd_on_feat = self.fgd(listpos, listposgt, n_samples, n_chunks)
 
-
+        histfig = None
+        if self.args.use_vad:
+            histfig = self.getvelhist(rot, vad)
         
-        return fgd_on_feat
+        return fgd_on_feat, histfig
 
     def sampleval(self, samples=None, chunks=None):
         assert chunks <= np.min(self.data.samples_per_file) # assert that we don't go over the number of chunks per file
@@ -119,12 +122,22 @@ class GeneaEvaluator:
         if self.args.use_vad:
             allvad = np.concatenate(allvad, axis=1)
 
-        return allsampledmotion, allgtmotion, allsampleposition, allgtposition
+        return allsampledmotion, allgtmotion, allsampleposition, allgtposition, allvad
 
-    def rot_velocity(self):
-        pass
-
-    def 
+    def getvelhist(self, motion, vad):
+        joints = self.data.getjoints()
+        fvad = vad[:,1:].flatten()
+        wvad, wovad = [], []
+        for joint, index in joints.items():
+            vels = np.sum(np.abs((motion[:,index,:, 1:] - motion[:,index,:, :-1])), axis=1).flatten()
+            wvad += list(vels[fvad==1])
+            wovad += list(vels[fvad==0])
+        n_bins =200
+        fig, axs = plt.subplots(1, 1, sharex = True, tight_layout=True, figsize=(20,20))
+        axs.hist(wvad, bins = n_bins, histtype='step', label='VAD = 1', linewidth=4, color='red')
+        axs.hist(wovad, bins = n_bins, histtype='step', label='VAD = 0', linewidth=4, color='black')
+        axs.set_yscale('log')
+        return fig
     
     def fgd(self, listpos, listposgt=None, n_samples=100, n_chunks=1):
         # "Direct" ground truth positions

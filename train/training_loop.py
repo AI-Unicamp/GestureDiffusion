@@ -226,8 +226,8 @@ class TrainLoop:
 
     def valwandb(self):
         assert self.log_wandb
-        fgd = self.genea_evaluator.eval()
-        self.log_wandb.wandb.log({'FGD Validation': fgd})
+        fgd, histfig = self.genea_evaluator.eval()
+        self.log_wandb.wandb.log({'FGD Validation': fgd, 'Rot Vel Hist': self.log_wandb.wandb.Image(histfig)})
         
 
     def run_debugemb(self):
