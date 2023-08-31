@@ -80,3 +80,45 @@ def filter_and_interp(rotation, position, num_frames=120, chunks=None):
     rotation = savgol_filter(rotation, 9, 3, axis=-1)
 
     return position, rotation
+
+def np_matrix_to_rotation_6d(matrix: np.ndarray) -> np.ndarray:
+    """
+    Same as utils.rotation_conversions.matrix_to_rotation_6d but for numpy arrays.
+    """
+    return matrix[..., :2, :].copy().reshape(6)
+
+def bvh2representations2(anim: bvhsdk.Animation):
+    # Converts bvh to two representations: 6d rotations and 3d positions 
+    # And 3d rotations (euler angles) and 3d positions
+    # The 3d positions of both representations are the same (duplicated data)
+    # This representation is used in the genea challenge
+    njoints = len(anim.getlistofjoints())
+    npyrot6dpos = np.empty(shape=(anim.frames, 9*njoints))
+    npyrotpos = np.empty(shape=(anim.frames, 6*njoints))
+    for i, joint in enumerate(anim.getlistofjoints()):
+        npyrot6dpos[:,i*9:i*9+6] = [ np_matrix_to_rotation_6d(joint.getLocalTransform(frame)[:-1,:-1]) for frame in range(anim.frames) ]
+        npyrotpos[:,i*6:i*6+3] = [ joint.rotation[frame] for frame in range(anim.frames) ]
+
+    for frame in range(anim.frames):
+        for i, joint in enumerate(anim.getlistofjoints()):
+            pos = joint.getPosition(frame)
+            npyrot6dpos[frame, i*9+6:i*9+9] = pos
+            npyrotpos[frame, i*6+3:i*6+6] = pos
+    
+    return npyrot6dpos, npyrotpos
+
+def bvh2representations1(anim: bvhsdk.Animation):
+    # Converts bvh to three representations: 6d rotations, 3d positions (euler angles) and 3d positions
+    njoints = len(anim.getlistofjoints())
+    npyrot6d = np.empty(shape=(anim.frames, 6*njoints))
+    npyrot = np.empty(shape=(anim.frames, 3*njoints))
+    npypos = np.empty(shape=(anim.frames, 3*njoints))
+    for i, joint in enumerate(anim.getlistofjoints()):
+        npyrot6d[:,i*6:i*6+6] = [ np_matrix_to_rotation_6d(joint.getLocalTransform(frame)[:-1,:-1]) for frame in range(anim.frames) ]
+        npyrot[:,i*3:i*3+3] = [ joint.rotation[frame] for frame in range(anim.frames) ]
+
+    for frame in range(anim.frames):
+        for i, joint in enumerate(anim.getlistofjoints()):
+            npypos[frame, i*3:i*3+3] = joint.getPosition(frame)
+    
+    return npyrot6d, npyrot, npypos
