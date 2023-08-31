@@ -25,7 +25,7 @@ class GeneaEvaluator:
                                         num_frames=args.num_frames, 
                                         step=args.num_frames, #no overlap
                                         use_wavlm=args.use_wavlm, 
-                                        use_vad=args.use_vad, 
+                                        use_vad=True, #Hard-coded to get vad from files but the model will not use it since args.use_vad=False
                                         vadfromtext=args.vadfromtext,
                                         split='val')
         self.data = self.dataloader.dataset
@@ -56,9 +56,7 @@ class GeneaEvaluator:
         # Compute FGD
         fgd_on_feat = self.fgd(listpos, listposgt, n_samples, n_chunks)
 
-        histfig = None
-        if self.args.use_vad:
-            histfig = self.getvelhist(rot, vad)
+        histfig = self.getvelhist(rot, vad)
         
         return fgd_on_feat, histfig
 
@@ -112,15 +110,13 @@ class GeneaEvaluator:
             allgtmotion.append(gt_rot.cpu().numpy())
             allsampleposition.append(sample_pos.squeeze().cpu().numpy())
             allgtposition.append(gt_pos.squeeze().cpu().numpy())
-            if self.args.use_vad:
-                allvad.append(model_kwargs['y']['vad'].cpu().numpy())
+            allvad.append(model_kwargs['y']['vad'].cpu().numpy())
 
         allsampledmotion = np.concatenate(allsampledmotion, axis=3)
         allgtmotion = np.concatenate(allgtmotion, axis=3)
         allsampleposition = np.concatenate(allsampleposition, axis=3)
         allgtposition = np.concatenate(allgtposition, axis=3)
-        if self.args.use_vad:
-            allvad = np.concatenate(allvad, axis=1)
+        allvad = np.concatenate(allvad, axis=1)
 
         return allsampledmotion, allgtmotion, allsampleposition, allgtposition, allvad
 
