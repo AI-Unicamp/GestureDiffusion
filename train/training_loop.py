@@ -191,34 +191,27 @@ class TrainLoop:
 
                 if self.step % self.save_interval == 0:
                     self.save()
-                    self.model.eval()
-                    #self.evaluate()
-                    self.model.train()
+                    
+                    if self.log_wandb:
+                        print('Logging epoch wandb')
+                        stds = np.zeros(len(dictlog))
+                        
+                        for i, (k,v) in enumerate(dictlog.items()):
+                            self.log_wandb.wandb.log({k+'_mean': v})
+                        
+                        stds = [ [str(i), np.std(v)] for i,v in enumerate(dictlog.values())]
+                        table_std = self.log_wandb.wandb.Table(data=stds, columns=['dim', 'std'])
+                        std_scatter = self.log_wandb.wandb.plot.scatter(table_std, x='dim', y='std', title='trn data emb std over batch')
+                        self.log_wandb.wandb.log({'epoch': epoch, 'trn_data_emb_std_plot': std_scatter})
 
-                    # Run for a finite amount of time in integration tests.
-                    if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
-                        return
+                        self.model.eval()
+                        self.valwandb()
+                        self.model.train()
+
                 self.step += 1
 
             if not (not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps):
                 break
-
-            if self.log_wandb:
-                print('Logging epoch wandb')
-                stds = np.zeros(len(dictlog))
-                
-                for i, (k,v) in enumerate(dictlog.items()):
-                    self.log_wandb.wandb.log({k+'_mean': v})
-                
-                stds = [ [str(i), np.std(v)] for i,v in enumerate(dictlog.values())]
-                table_std = self.log_wandb.wandb.Table(data=stds, columns=['dim', 'std'])
-                std_scatter = self.log_wandb.wandb.plot.scatter(table_std, x='dim', y='std', title='trn data emb std over batch')
-                self.log_wandb.wandb.log({'epoch': epoch, 'trn_data_emb_std_plot': std_scatter})
-
-                self.model.eval()
-                self.valwandb()
-                self.model.train()
-                
 
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
