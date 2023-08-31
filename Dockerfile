@@ -1,4 +1,4 @@
-FROM nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04
+FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
 
 ENV PATH="/root/miniconda3/bin:${PATH}"
 ARG PATH="/root/miniconda3/bin:${PATH}"
@@ -33,3 +33,5 @@ RUN pip install PyYAML
 RUN pip install librosa
 RUN pip install python_speech_features
 RUN pip install einops
+RUN pip install wandb
+RUN pip install jupyter notebook
