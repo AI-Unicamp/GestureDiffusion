@@ -29,7 +29,7 @@ def process_vad(sourcepath, savepath, datadir):
     for file in tqdm(os.listdir(sourcepath)):
         if not os.path.exists(os.path.join(savepath, file[:-4]+'.npy')):
             audio, old_sr = torchaudio.load(os.path.join(sourcepath,file))
-            audio = torchaudio.functional.resample(audio, orig_freq=44100, new_freq=sr)
+            audio = torchaudio.functional.resample(audio, orig_freq=old_sr, new_freq=sr)
             tmpfile = "tmp.wav"
             torchaudio.save(
             tmpfile , audio, sr
