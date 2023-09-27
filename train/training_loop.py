@@ -16,7 +16,7 @@ from diffusion.resample import LossAwareSampler, UniformSampler
 from tqdm import tqdm
 from diffusion.resample import create_named_schedule_sampler
 from data_loaders.humanml.networks.evaluator_wrapper import EvaluatorMDMWrapper
-from eval import eval_humanml, eval_humanact12_uestc, eval_genea
+#from eval import eval_humanml, eval_humanact12_uestc, eval_genea
 from data_loaders.get_data import get_dataset_loader
 import utils.rotation_conversions as geometry
 
@@ -145,7 +145,6 @@ class TrainLoop:
                           'timestep':np.zeros(size), 
                           'audio':   np.zeros(size),
                           'poses':   np.zeros(size)}
-
             for stepcount, (motion, cond) in enumerate(tqdm(self.data)):
                 if not (not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps):
                     break
@@ -165,7 +164,7 @@ class TrainLoop:
                     dictlog['audio'][i:e] = self.model.batch_log['audio']
                     dictlog['poses'][i:e] = self.model.batch_log['poses']
 
-                if self.step % self.log_interval == 0:
+                if self.step % self.log_interval == 0 and self.log_wandb:
 
                     mean_, std_ = self.model.batch_log['embs'][1], self.model.batch_log['embs'][0]
                     mean = [ [str(i), v] for i,v in enumerate(mean_)]
@@ -209,7 +208,6 @@ class TrainLoop:
                         self.model.train()
 
                 self.step += 1
-
             if not (not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps):
                 break
 

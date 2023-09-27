@@ -1,17 +1,22 @@
 from torch.utils.data import DataLoader
 from data_loaders.tensors import collate as all_collate
-from data_loaders.tensors import gg_collate
+from data_loaders.tensors import gg_collate, ptbr_collate
 
 def get_dataset_class(name):
     if name in ["genea2023", "genea2023+"]:
         from data_loaders.gesture.data.dataset import Genea2023
         return Genea2023
+    elif name in ['ptbr']:
+        from data_loaders.gesture.data.ptbrdataset import PTBRGesture
+        return PTBRGesture
     else:
         raise ValueError(f'Unsupported dataset name [{name}]')
 
 def get_collate_fn(name, hml_mode='train'):
     if name in ["genea2023", "genea2023+"]:
         return gg_collate
+    elif name in ['ptbr']:
+        return ptbr_collate
     else:
         raise ValueError(f'Unsupported dataset name [{name}]')
 

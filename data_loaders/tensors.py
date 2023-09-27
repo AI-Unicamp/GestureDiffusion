@@ -70,3 +70,13 @@ def gg_collate(batch):
     } for b in batch]
     return collate(adapted_batch)
 
+def ptbr_collate(batch):
+    adapted_batch = [{
+        'inp': torch.from_numpy(b[0].T).float().unsqueeze(1),   #b[0] # motion [frames, motion_dim]
+        'seed': torch.from_numpy(b[1].T).float().unsqueeze(1),  #b[1] # seed poses [n_seed_poses, motion_dim]
+        'audio': torch.from_numpy(b[2]).unsqueeze(0),           #b[2] # audio [frames]
+        'vad': torch.from_numpy(b[3]).long(),               #b[3] # vad [frames]
+        'audio_rep': torch.from_numpy(b[4]).float(),        #b[4] # wavlm
+        'sample_data': b[5]                                 #b[5] # sample_data
+    } for b in batch]
+    return collate(adapted_batch)

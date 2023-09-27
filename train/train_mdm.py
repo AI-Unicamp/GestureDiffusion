@@ -11,15 +11,15 @@ from utils import dist_util
 from train.training_loop import TrainLoop
 from data_loaders.get_data import get_dataset_loader
 from utils.model_util import create_model_and_diffusion
-from train.train_platforms import ClearmlPlatform, TensorboardPlatform, NoPlatform  # required for the eval operation
+#from train.train_platforms import ClearmlPlatform, TensorboardPlatform, NoPlatform  # required for the eval operation
 import numpy as np
 
 def main():
     args = train_args()
     fixseed(args.seed)
-    train_platform_type = eval(args.train_platform_type)
-    train_platform = train_platform_type(args.save_dir)
-    train_platform.report_args(args, name='Args')
+    #train_platform_type = eval(args.train_platform_type)
+    #train_platform = train_platform_type(args.save_dir)
+    #train_platform.report_args(args, name='Args')
 
     if args.save_dir is None:
         raise FileNotFoundError('save_dir was not specified.')
@@ -35,7 +35,7 @@ def main():
         projectname = os.path.basename(os.path.normpath(args.save_dir))
         import wandb
         wandb.login(anonymous="allow")
-        wandb.init(project='debug_training_loop', config=vars(args))
+        wandb.init(project='ptbrgesture', config=vars(args))
         args.wandb = wandb
 
     dist_util.setup_dist(args.device)
@@ -46,22 +46,12 @@ def main():
     print("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(args, data)
     model.to(dist_util.dev())
-    model.rot2xyz.smpl_model.eval()
+    #model.rot2xyz.smpl_model.eval()
 
     print('Total params: %.2fM' % (sum(p.numel() for p in model.parameters_wo_clip()) / 1000000.0))
     print("Training...")
-    debugemb = False
-    if debugemb:
-        debugsnps = TrainLoop(args, train_platform, model, diffusion, data).run_debugemb()
-        names = ['seed','text','timestep','audio','vad','poses']
-        for i, debugnp in enumerate(debugsnps):
-            print('------------------')
-            print(debugnp)
-            np.save(os.path.join(args.save_dir, names[i]+'.npy'), debugnp[1])
-
-    else:
-        TrainLoop(args, train_platform, model, diffusion, data).run_loop()
-    train_platform.close()
+    TrainLoop(args, None, model, diffusion, data).run_loop()
+    #train_platform.close()
 
 if __name__ == "__main__":
     main()

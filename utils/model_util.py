@@ -1,5 +1,5 @@
 #from model.mdm_old import MDM_Old as MDM
-from model.mdm import MDM
+from model.mod_mdm import MDM
 from diffusion import gaussian_diffusion as gd
 from diffusion.respace import SpacedDiffusion, space_timesteps
 
@@ -25,7 +25,7 @@ def get_model_args(args, data):
         data_rep = 'genea_vec'
         njoints = 498
         nfeats = 1
-    elif args.dataset in ['genea2023+']:
+    elif args.dataset in ['genea2023+', 'ptbr']:
         data_rep = 'genea_vec+'
         njoints = 1245
         nfeats = 1
