@@ -109,6 +109,8 @@ class PTBRGesture(data.Dataset):
         self.pos_shape = self.pos[0].shape[1]
         self.motio_feat_shape = self.r6d_shape + self.r3d_shape + 2*self.pos_shape # 2* for velocity
 
+    def inv_transform(self, data):
+        return data * np.concatenate((self.rot6d_std, self.pos_std, self.velrot_std, self.velpos_std)) + np.concatenate((self.rot6d_mean, self.pos_mean, self.velrot_mean, self.velpos_mean))
 
     def __getitem__(self, index):
         # find the file that the sample belongs two
@@ -121,7 +123,15 @@ class PTBRGesture(data.Dataset):
         wavlm = self.__getwavlm(file_idx, sample)
         return motion, seed_poses, audio, vad, wavlm, [self.takes[file_idx].name, file_idx, sample]
 
-    
+    def __dummysample__(self):
+        motion = np.zeros(shape=(self.window, self.motio_feat_shape))
+        seed = np.zeros(shape=(self.n_seed_poses, self.motio_feat_shape))
+        audio = np.zeros(shape=(int(self.window/30*16000)))
+        vad = np.zeros(shape=(self.window, 1))
+        vad = np.transpose(vad, (1,0))
+        wavlm = np.zeros(shape=(1, 768, 1, self.window))
+        return motion, seed, audio, vad, wavlm, ['dummy', 0, 0]
+
     def __getaudio(self, file_idx, sample):
         # Get audio data from file_idx and sample
         b = int(sample*self.step/30*16000)
