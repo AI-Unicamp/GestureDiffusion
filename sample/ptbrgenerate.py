@@ -215,7 +215,7 @@ def main():
 
     for i, take in enumerate(range(len(data.dataset.samples_per_file))):
         final_frame = data.dataset.frames[i]
-        save_file = data.dataset.takes[take].name
+        save_file = 'gen_' + data.dataset.takes[take].name
         print('Saving take {}: {}'.format(i, save_file))
         animation_save_path = os.path.join(out_path, save_file)
         caption = '' # since we are generating a ~1 min long take the caption would be too long
