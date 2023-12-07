@@ -62,9 +62,12 @@ def main():
     #    model = ClassifierFreeSampleModel(model)   # wrapping model with the classifier-free sampler
     model.to(dist_util.dev())
     model.eval()  # disable random masking
+    all_motions, all_motions_rot = sample(args, model, diffusion, data, collate_fn, n_joints)
+    all_motions, all_motions_rot = interpolate(args, all_motions, all_motions_rot, max_chunks_in_take=np.max(data.dataset.samples_per_file))
+    savebvh(data, all_motions, all_motions_rot, out_path, fps, bvhreference)
 
     
-    
+def sample(args, model, diffusion, data, collate_fn, n_joints):
     
     total_batches = int(np.round(len(data.dataset.samples_per_file)/args.batch_size))
     max_chunks_in_take = np.max(data.dataset.samples_per_file)
@@ -169,7 +172,9 @@ def main():
         #all_motions_rot = all_motions_rot[:total_num_samples]  # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
         #all_text = all_text[:total_num_samples]
         #all_lengths = np.concatenate(all_lengths, axis=0)
+    return all_motions, all_motions_rot#, all_audios
 
+def interpolate(args, all_motions, all_motions_rot, max_chunks_in_take):
     # Smooth chunk transitions
     inter_range = 10 #interpolation range in frames
     for transition in np.arange(1, max_chunks_in_take-1)*args.num_frames:
@@ -186,6 +191,9 @@ def main():
     all_motions = savgol_filter(all_motions, 9, 3, axis=-1)
     all_motions_rot = savgol_filter(all_motions_rot, 9, 3, axis=-1)
     
+    return all_motions, all_motions_rot
+
+def savebvh(data, all_motions, all_motions_rot, out_path, fps, bvhreference):
 
     if os.path.exists(out_path):
         shutil.rmtree(out_path)
