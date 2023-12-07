@@ -16,7 +16,7 @@ from diffusion.resample import LossAwareSampler, UniformSampler
 from tqdm import tqdm
 from diffusion.resample import create_named_schedule_sampler
 from data_loaders.humanml.networks.evaluator_wrapper import EvaluatorMDMWrapper
-#from eval import eval_humanml, eval_humanact12_uestc, eval_genea
+from eval import eval_humanml, eval_humanact12_uestc, eval_genea, eval_ptbrgestures
 from data_loaders.get_data import get_dataset_loader
 import utils.rotation_conversions as geometry
 
@@ -47,7 +47,10 @@ class TrainLoop:
         self.lr_anneal_steps = args.lr_anneal_steps
         self.log_wandb = args.wandb
         if self.log_wandb:
-            self.genea_evaluator = eval_genea.GeneaEvaluator(args, self.model, self.diffusion)
+            if args.dataset == 'ptbr':
+                self.evaluator = eval_ptbrgestures.PTBREvaluator(args, self.model, self.diffusion)
+            elif args.dataset == 'genea2023+':
+                self.evaluator = eval_genea.GeneaEvaluator(args, self.model, self.diffusion)
 
         self.step = 0
         self.resume_step = 0
@@ -218,8 +221,11 @@ class TrainLoop:
 
     def valwandb(self):
         assert self.log_wandb
-        fgd, histfig = self.genea_evaluator.eval()
-        self.log_wandb.wandb.log({'FGD Validation': fgd, 'Rot Vel Hist': self.log_wandb.wandb.Image(histfig)})
+        fgd, histfig = self.evaluator.eval()
+        if histfig is not None:
+            self.log_wandb.wandb.log({'FGD Validation': fgd, 'Rot Vel Hist': self.log_wandb.wandb.Image(histfig)})
+        else:
+            self.log_wandb.wandb.log({'FGD Validation': fgd})
         
 
     def run_debugemb(self):

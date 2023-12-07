@@ -82,8 +82,11 @@ def make_tensor(path, n_frames, dataset, stride=None, max_files=64, n_chunks=Non
     if os.path.isdir(path):
         files = glob.glob(os.path.join(path, '*.npy'))
     else:
-        files = [path]
+        raise ValueError('Unknown path: {}'.format(path))
 
+    return files_to_tensor(files, mean_vec, std_vec, idx_positions=idx_positions, n_frames=n_frames, n_chunks=n_chunks)
+
+def files_to_tensor(files, mean_vec, std_vec, idx_positions=None, n_frames=120, n_chunks=None):
     # Make sure we don't run out of memory
     max_files = max_files if max_files < len(files) else len(files)
 
