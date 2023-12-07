@@ -79,12 +79,15 @@ class PTBRGesture(data.Dataset):
             self.rot3d[index] = self.rot3d[index][take.bvh_start:]
             self.pos[index] = self.pos[index][take.bvh_start:]
             e = int(self.audio16k[index].shape[0]/16000*self.fps)
+            # Due to audio processing, vad and wavlm arrays may have one more frame than the audio arrays
+            e = np.min([e, self.vad[index].shape[0], self.wavlm[index].shape[0]])
             self.rot6d[index] = self.rot6d[index][:e]
             self.rot3d[index] = self.rot3d[index][:e]
             self.pos[index] = self.pos[index][:e]
             self.frames.append(self.rot6d[index].shape[0])
         
-        self.samples_per_file = [int(np.floor( (n - self.window ) / self.step)) for n in self.frames]
+        #self.samples_per_file = [int(np.floor( (n - self.window  ) / self.step)) for n in self.frames]
+        self.samples_per_file = [len( [i for i in np.arange(0, n, self.step) if i + self.window <= n] ) for n in self.frames]
         self.samples_cumulative = [np.sum(self.samples_per_file[:i+1]) for i in range(len(self.samples_per_file))]
         self.length = self.samples_cumulative[-1]
 
@@ -141,6 +144,7 @@ class PTBRGesture(data.Dataset):
     def __getvad(self, file_idx, sample):
         # Get vad data from file_idx and sample
         vad_vals = self.vad[file_idx][sample*self.step:sample*self.step+self.window]
+        assert vad_vals.shape[0] == self.window, f'VAD shape is {vad_vals.shape[0]} instead of {self.window}'
         # Reshape
         vad_vals = np.expand_dims(vad_vals, 1)                                              # [CHUNK_LEN, 1]
         vad_vals = np.transpose(vad_vals, (1,0))                                            # [1, CHUNK_LEN]
@@ -149,7 +153,8 @@ class PTBRGesture(data.Dataset):
     def __getwavlm(self, file_idx, sample):
         # Get wavlm data from file_idx and sample
         wavlm_reps = self.wavlm[file_idx][sample*self.step:sample*self.step+self.window]
-            # Reshape
+        assert wavlm_reps.shape[0] == self.window, f'WAVLM shape is {wavlm_reps.shape[0]} instead of {self.window}'
+        # Reshape
         wavlm_reps = np.transpose(wavlm_reps, (1,0))                                                    # [WAVLM_DIM, CHUNK_LEN]
         wavlm_reps = np.expand_dims(wavlm_reps, 1)                                                      # [WAVLM_DIM, 1, CHUNK_LEN]
         wavlm_reps = np.expand_dims(wavlm_reps, 0)                                                      # [1, WAVLM_DIM, 1, CHUNK_LEN]
