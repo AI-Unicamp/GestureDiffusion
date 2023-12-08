@@ -84,12 +84,12 @@ def make_tensor(path, n_frames, dataset, stride=None, max_files=64, n_chunks=Non
     else:
         raise ValueError('Unknown path: {}'.format(path))
 
-    return files_to_tensor(files, mean_vec, std_vec, idx_positions=idx_positions, n_frames=n_frames, n_chunks=n_chunks)
+    return files_to_tensor(files, mean_vec, std_vec, idx_positions=idx_positions, n_frames=n_frames, n_chunks=n_chunks, stride=stride, max_files=max_files)
 
-def files_to_tensor(files, mean_vec, std_vec, idx_positions=None, n_frames=120, n_chunks=None):
+def files_to_tensor(files, mean_vec, std_vec, idx_positions=None, n_frames=120, n_chunks=None, stride=None, max_files=None):
     # Make sure we don't run out of memory
     max_files = max_files if max_files < len(files) else len(files)
-
+    idx_positions = np.arange(len(mean_vec)) if idx_positions is None else idx_positions
     samples = []
     stride = n_frames // 2 if stride is None else stride
     print('Preparing data...')

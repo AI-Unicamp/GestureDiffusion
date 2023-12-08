@@ -6,9 +6,10 @@ from utils import dist_util
 import torch
 import bvhsdk
 from evaluation_metric.embedding_space_evaluator import EmbeddingSpaceEvaluator
-from evaluation_metric.train_AE import make_tensor
+from evaluation_metric.train_AE import make_tensor, files_to_tensor
 from sample import ptbrgenerate
 import matplotlib.pyplot as plt
+import os, glob
 
 # Imports for calling from command line
 from utils.parser_util import generate_args
@@ -34,6 +35,8 @@ class PTBREvaluator:
         #self.idx_positions, self.idx_rotations = mp.get_indexes('genea2023') # hard-coded 'genea2023' because std and mean vec are computed for this representation
         self.fgd_evaluator = EmbeddingSpaceEvaluator('./evaluation_metric/output/model_checkpoint_120_ptbr.bin', args.num_frames, dist_util.dev())
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.ground_truth_path = './dataset/PTBRGestures/motion/pos'
+        assert os.path.exists(self.ground_truth_path), f"Ground truth path {self.ground_truth_path} does not exist. Required to compute FGD."
         
 
     def eval(self, samples=None, chunks=None):
@@ -42,7 +45,7 @@ class PTBREvaluator:
         n_chunks = chunks if chunks else np.min(self.data.samples_per_file)
         #rot, gt_rot, pos, gt_pos, vad  = self.sampleval(n_samples, n_chunks)
         n_joints = 83
-        pos, rot = ptbrgenerate.sample(self.args, self.model, self.diffusion, self.dataloader, self.dataloader.collate_fn, n_joints)
+        pos, rot, sample_names = ptbrgenerate.sample(self.args, self.model, self.diffusion, self.dataloader, self.dataloader.collate_fn, n_joints)
         pos, rot = mp.filter_and_interp(rot, pos, num_frames=self.args.num_frames)
 
         listpos, listposgt = [], []
@@ -56,72 +59,46 @@ class PTBREvaluator:
             #bvhreference = mp.tobvh(self.bvhreference, gt_rot[i], gt_pos[i])
             #listposgt.append(mp.posfrombvh(bvhreference))
 
-        # Compute FGD
-        fgd_on_feat = self.fgd(listpos, listposgt, n_samples, n_chunks)
+        # Compute cross-FGD
+        cross_fgd = self.cross_fgd(listpos, sample_names )
+
+        # Compute FGD (whole test set versus whole train set)
+        fgd_on_feat = self.fgd(listpos, n_samples=n_samples, n_chunks=n_chunks)
 
         #histfig = self.getvelhist(rot, vad)
         
-        return fgd_on_feat, None
+        return fgd_on_feat, None, cross_fgd
 
-    #def sampleval(self, samples=None, chunks=None):
-    #    assert chunks <= np.min(self.data.samples_per_file) # assert that we don't go over the number of chunks per file
-    #    allsampledmotion = []
-    #    allsampleposition = []
-    #    allgtmotion = []
-    #    allgtposition = []
-    #    allvad = []
-    #    print('Evaluating validation set')
-    #    for idx in range(chunks):
-    #        print('### Sampling chunk {} of {}'.format(idx+1, chunks))
-    #        batch = self.data.getvalbatch(num_takes=samples, index=idx)
-    #        gt_motion, model_kwargs = self.dataloader.collate_fn(batch) # gt_motion: [num_samples(bs), njoints, 1, chunk_len]
-    #        model_kwargs['y'] = {key: val.to(dist_util.dev()) if torch.is_tensor(val) else val for key, val in model_kwargs['y'].items()} #seed: [num_samples(bs), njoints, 1, seed_len]
-    #        if idx > 0 and self.args.seed_poses > 0:
-    #            model_kwargs['y']['seed'] = sample_out[...,-self.data.n_seed_poses:]
-    #        sample_fn = self.diffusion.p_sample_loop
-    #        sample_out = sample_fn(
-    #            self.model,
-    #            (samples, self.model.njoints, self.model.nfeats, self.args.num_frames),
-    #            clip_denoised=False,
-    #            model_kwargs=model_kwargs,
-    #            skip_timesteps=0,  # 0 is the default value - i.e. don't skip any step
-    #            init_image=None,
-    #            progress=True,
-    #            dump_steps=None,
-    #            noise=None,
-    #            const_noise=False,
-    #        ) # [num_samples(bs), njoints, 1, chunk_len]
-#
-    #        sample = self.data.inv_transform(sample_out.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
-    #        gt_motion = self.data.inv_transform(gt_motion.cpu().permute(0, 2, 3, 1)).float() # [num_samples(bs), 1, chunk_len, njoints]
-#
-    #        # Split the data into positions and rotations
-    #        gt_pos, gt_rot = mp.split_pos_rot(self.args.dataset, gt_motion)
-    #        sample_pos, sample_rot = mp.split_pos_rot(self.args.dataset, sample)
-#
-    #        # Convert numpy array to euler angles
-    #        if self.args.dataset == 'genea2023+':
-    #            gt_rot = mp.rot6d_to_euler(gt_rot)
-    #            sample_rot = mp.rot6d_to_euler(sample_rot)
-#
-    #        sample_pos = sample_pos.view(sample_pos.shape[:-1] + (-1, 3))                # [num_samples(bs), 1, chunk_len, n_joints/3, 3]
-    #        sample_pos = sample_pos.view(-1, *sample_pos.shape[2:]).permute(0, 2, 3, 1) 
-    #        gt_pos = gt_pos.view(gt_pos.shape[:-1] + (-1, 3))                # [num_samples(bs), 1, chunk_len, n_joints/3, 3]
-    #        gt_pos = gt_pos.view(-1, *gt_pos.shape[2:]).permute(0, 2, 3, 1)
-#
-    #        allsampledmotion.append(sample_rot.cpu().numpy())
-    #        allgtmotion.append(gt_rot.cpu().numpy())
-    #        allsampleposition.append(sample_pos.squeeze().cpu().numpy())
-    #        allgtposition.append(gt_pos.squeeze().cpu().numpy())
-    #        allvad.append(model_kwargs['y']['vad'].cpu().numpy())
-#
-    #    allsampledmotion = np.concatenate(allsampledmotion, axis=3)
-    #    allgtmotion = np.concatenate(allgtmotion, axis=3)
-    #    allsampleposition = np.concatenate(allsampleposition, axis=3)
-    #    allgtposition = np.concatenate(allgtposition, axis=3)
-    #    allvad = np.concatenate(allvad, axis=1)
-#
-    #    return allsampledmotion, allgtmotion, allsampleposition, allgtposition, allvad
+    def cross_fgd(self, listpos, sample_names):
+        # Prepare ground truth data
+        std_vec = np.load('./dataset/PTBRGestures/pos_Std.npy')
+        mean_vec = np.load('./dataset/PTBRGestures/pos_Mean.npy')
+        idx_positions = np.arange(len(mean_vec))
+        std_vec[std_vec==0] = 1
+        files = glob.glob(os.path.join(self.ground_truth_path, '*.npy'))
+        files = [file for file in files if '_un_' not in os.path.basename(file)]
+        div_ground_truth, div_test = [], []
+        styles = ['p01_e01', 'p01_e02', 'p01_e03', 'p02_e01', 'p02_e02', 'p02_e03']
+        for style in styles:
+            div_files = [file for file in files if style in os.path.basename(file)]
+            div_ground_truth.append(files_to_tensor(div_files, mean_vec, std_vec, n_frames=self.args.num_frames, max_files=1000).to(self.device))
+
+            div_samples = [listpos[i] for i, name in enumerate(sample_names) if style in name]
+            div_test.append(self.fgd_prep(div_samples, n_frames=self.args.num_frames).to(self.device))
+
+        cross_fgds = {}
+        for gt_style, style_in_gt in zip(div_ground_truth, styles):
+            self.fgd_evaluator.reset()
+
+            self.fgd_evaluator.push_real_samples(gt_style)
+            for test_style, style_in_test in zip(div_test, styles):
+                self.fgd_evaluator.push_generated_samples(test_style)
+                fgd_on_feat = self.fgd_evaluator.get_fgd(use_feat_space=True)
+                print(f'Cross-FGD gt {style_in_gt} vs test {style_in_test}: {fgd_on_feat:8.3f}')
+                cross_fgds.update({'gt {} vs test {}'.format(style_in_gt, style_in_test): fgd_on_feat})
+
+        
+        return cross_fgds
 
     def getvelhist(self, motion, vad):
         joints = self.data.getjoints()
@@ -140,19 +117,13 @@ class PTBREvaluator:
     
     def fgd(self, listpos, listposgt=None, n_samples=100, n_chunks=1):
         # "Direct" ground truth positions
-        real_val = make_tensor(f'./dataset/PTBRGestures/motion/pos', self.args.num_frames, dataset='ptbr',max_files=n_samples, n_chunks=None).to(self.device)
+        real_val = make_tensor(self.ground_truth_path, self.args.num_frames, dataset='ptbr',max_files=n_samples, n_chunks=None).to(self.device)
 
         #gt_data = self.fgd_prep(listposgt).to(self.device)
         test_data = self.fgd_prep(listpos).to(self.device)
 
         fgd_on_feat = self.run_fgd(real_val, test_data)
         print(f'Sampled to validation: {fgd_on_feat:8.3f}')
-
-        #fgd_on_feat = self.run_fgd(gt_data, test_data)
-        #print(f'Sampled to validation from pipeline: {fgd_on_feat:8.3f}')
-
-        #fgd_on_feat = self.run_fgd(real_val, gt_data)
-        #print(f'Validation from pipeline to validation (should be zero): {fgd_on_feat:8.3f}')
         return fgd_on_feat
 
     def fgd_prep(self, data, n_frames=120, stride=None):

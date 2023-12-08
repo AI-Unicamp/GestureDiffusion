@@ -247,6 +247,13 @@ class PTBRGesture(data.Dataset):
         assert takelist, f'No takes found for id {id}'
         return takelist
     
+    def filter_style(self, style):
+        # Get list of takes from style
+        assert self.__registered, 'Takes are not registered'
+        takelist = [take for take in self.takes if take.style == style]
+        assert takelist, f'No takes found for style {style}'
+        return takelist
+    
     def filter_part_id(self, part, id, include_unscripted=False):
         # Get list of takes from id, then remove takes that are not from part
         assert self.__registered, 'Takes are not registered'

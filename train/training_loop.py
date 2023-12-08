@@ -221,11 +221,12 @@ class TrainLoop:
 
     def valwandb(self):
         assert self.log_wandb
-        fgd, histfig = self.evaluator.eval()
+        fgd, histfig, cross_fgd = self.evaluator.eval()
         if histfig is not None:
             self.log_wandb.wandb.log({'FGD Validation': fgd, 'Rot Vel Hist': self.log_wandb.wandb.Image(histfig)})
-        else:
-            self.log_wandb.wandb.log({'FGD Validation': fgd})
+        if cross_fgd is not None:
+            self.log_wandb.wandb.log(cross_fgd)
+        self.log_wandb.wandb.log({'FGD Validation': fgd})
         
 
     def run_debugemb(self):

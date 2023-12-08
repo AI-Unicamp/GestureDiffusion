@@ -62,7 +62,7 @@ def main():
     #    model = ClassifierFreeSampleModel(model)   # wrapping model with the classifier-free sampler
     model.to(dist_util.dev())
     model.eval()  # disable random masking
-    all_motions, all_motions_rot = sample(args, model, diffusion, data, collate_fn, n_joints)
+    all_motions, all_motions_rot, _ = sample(args, model, diffusion, data, collate_fn, n_joints)
     all_motions, all_motions_rot = interpolate(args, all_motions, all_motions_rot, max_chunks_in_take=np.max(data.dataset.samples_per_file))
     savebvh(data, all_motions, all_motions_rot, out_path, fps, bvhreference)
 
@@ -75,6 +75,7 @@ def sample(args, model, diffusion, data, collate_fn, n_joints):
     all_motions = np.zeros(shape=(total_batches*args.batch_size, n_joints, 3, args.num_frames*max_chunks_in_take))
     all_motions_rot = np.zeros(shape=(total_batches*args.batch_size, n_joints, 3, args.num_frames*max_chunks_in_take))
     all_audios = []
+    files = []
 
     for batch_count in range(total_batches):
         print('### Sampling batch {} of {}'.format(batch_count+1, total_batches))
@@ -161,7 +162,9 @@ def sample(args, model, diffusion, data, collate_fn, n_joints):
             chunked_audios.append(model_kwargs['y']['audio'].cpu().numpy())
             chunked_motions.append(sample.cpu().numpy())
             chunked_motions_rot.append(sample_rot.cpu().numpy())
-
+            if chunk == 0:
+                for sample in batch:
+                    files.append(sample[-1][0])
         #total_num_samples = num_samples * chunks_per_take
         #all_audios = np.concatenate(all_audios, axis=1)
         #all_audios = audio
@@ -172,7 +175,7 @@ def sample(args, model, diffusion, data, collate_fn, n_joints):
         #all_motions_rot = all_motions_rot[:total_num_samples]  # [num_samples(bs), njoints/3, 3, chunk_len*chunks]
         #all_text = all_text[:total_num_samples]
         #all_lengths = np.concatenate(all_lengths, axis=0)
-    return all_motions, all_motions_rot#, all_audios
+    return all_motions, all_motions_rot, files
 
 def interpolate(args, all_motions, all_motions_rot, max_chunks_in_take):
     # Smooth chunk transitions
