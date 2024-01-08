@@ -153,6 +153,33 @@ def takes_get_and_check(bvhpath, wavpath):
         assert take[:-4] in takes, 'WAV file {} does not have a corresponding BVH file'.format(take[:-4])
     return takes
 
+def addBodyWorld():
+    """
+    Adds body and world rotation and translation to the bvh files.
+    This is NOT a data processing method, it is a BVH preparation method. This model requires BVH files to have a body world joint as the root joint.
+    If you are trying to use this model with a new dataset, you will need to add a body world joint to your BVH files.
+    This method is provided as an example of how to do it.
+    """
+    #a = bvhsdk.ReadFile('.\\dataset\\PTBRGestures\\motion\\bvh_twh\\newtess_id01_p01_e01_f01.bvh')
+    b = bvhsdk.ReadFile('.\\dataset\\Genea2023\\trn\\main-agent\\bvh\\trn_2023_v0_000_main-agent.bvh')
+
+    path = '.\\dataset\\PTBRGestures\\motion\\bvh_twh'
+    savepath = '.\\dataset\\PTBRGestures\\motion\\bvh_twh\\with_body_world'
+    for f in os.listdir(path):
+        if f.endswith('.bvh'):
+            a = bvhsdk.ReadFile(os.path.join(path, f))
+
+            for j1,j2 in zip(a.getlistofjoints(), b.getlistofjoints()[1:]):
+                j2.rotation = j1.rotation
+                j2.translation = j1.translation
+
+            b.frametime = a.frametime
+            b.root.translation = b.root.children[0].translation*[1,0,1]
+            b.root.children[0].translation *= [0,1,0]
+            b.frames = a.frames
+            b.root.rotation = np.zeros(shape=(b.frames, 3))
+
+            bvhsdk.WriteBVH(b, path=savepath, name=f.replace('.bvh', ''), frametime=b.frametime)
         
 
 if __name__ == '__main__':
