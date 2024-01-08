@@ -42,10 +42,18 @@ class MDM(nn.Module):
 
         # VAD
         self.use_vad = kargs.get('use_vad', False)
+        self.use_style_enc = kargs.get('use_style_enc', False)
         if self.use_vad:
-            vad_lat_dim = int(self.latent_dim)
-            self.vad_lookup = nn.Embedding(2, vad_lat_dim)
-            print('Using VAD')
+            if self.use_style_enc:
+                vad_lat_dim = int(self.latent_dim)
+                self.vad_lookup = nn.Embedding(2, int(vad_lat_dim/2))
+                print('Using VAD')
+                self.style_lookup = nn.Linear(12, int(vad_lat_dim/2))
+                print('Using Style Encoder')
+            else:
+                vad_lat_dim = int(self.latent_dim)
+                self.vad_lookup = nn.Embedding(2, vad_lat_dim)
+                print('Using VAD')
 
         # Seed Pose Encoder
         self.seed_poses = kargs.get('seed_poses', 0)
@@ -169,7 +177,12 @@ class MDM(nn.Module):
         if self.use_vad:
             vad_vals = y['vad']                                     # [BS, CHUNK_LEN]
             emb_vad = self.vad_lookup(vad_vals)                     # [BS, CHUNK_LEN, LAT_DIM]
-            emb_vad = emb_vad.permute(1, 0, 2)                      # [CHUNK_LEN, BS, LAT_DIM]
+            emb_vad = emb_vad.permute(1, 0, 2)                      # [CHUNK_LEN, BS, LAT_DIM or LAT_DIM/2]
+
+        if self.use_style_enc:
+            style_vals = y['onehot']                                     # [BS, STYLE_DIM]
+            style_vals = style_vals.unsqueeze(0).repeat(nframes, 1, 1)   # [CHUNK_LEN, BS, STYLE_DIM]
+            emb_style = self.style_lookup(style_vals)                     # [CHUNK_LEN, BS, LAT_DIM/2]
 
         # Timesteps Embeddings
         emb_t = self.embed_timestep(timesteps)                  # [1, BS, LAT_DIM]
@@ -202,7 +215,10 @@ class MDM(nn.Module):
 
         # Cat Pose w/ Audio (Fine-Grained) Embeddings
         if self.use_vad:
-            fg_embs = torch.cat((emb_pose, emb_audio, emb_vad), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM]
+            if self.use_style_enc:
+                fg_embs = torch.cat((emb_pose, emb_audio, emb_vad, emb_style), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM/2 + LAT_DIM/2]
+            else:
+                fg_embs = torch.cat((emb_pose, emb_audio, emb_vad), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM + LAT_DIM]
         else:
             fg_embs = torch.cat((emb_pose, emb_audio), axis=2)      # [CHUNK_LEN, BS, LAT_DIM + AUDIO_DIM]
 

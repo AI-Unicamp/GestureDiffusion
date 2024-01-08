@@ -124,7 +124,7 @@ class PTBRGesture(data.Dataset):
         audio = self.__getaudio(file_idx, sample)
         vad = self.__getvad(file_idx, sample)
         wavlm = self.__getwavlm(file_idx, sample)
-        return motion, seed_poses, audio, vad, wavlm, [self.takes[file_idx].name, file_idx, sample]
+        return motion, seed_poses, audio, vad, wavlm, [self.takes[file_idx].name, file_idx, sample, self.takes[file_idx].one_hot]
 
     def __dummysample__(self):
         motion = np.zeros(shape=(self.window, self.motio_feat_shape))
@@ -133,7 +133,7 @@ class PTBRGesture(data.Dataset):
         vad = np.zeros(shape=(self.window, 1))
         vad = np.transpose(vad, (1,0))
         wavlm = np.zeros(shape=(1, 768, 1, self.window))
-        return motion, seed, audio, vad, wavlm, ['dummy', 0, 0]
+        return motion, seed, audio, vad, wavlm, ['dummy', 0, 0, np.zeros(shape=(12))]
 
     def __getaudio(self, file_idx, sample):
         # Get audio data from file_idx and sample
@@ -307,9 +307,52 @@ class Take():
             self.phrase = None
         self.style = self.getint(splited[2])
         self.bvh_start = 0
+        self.one_hot, self.class_label = self.one_hot_encode()
 
     def getint(self, string):
         # Get integer from string. Note: 'something01' -> 1
         return int(''.join(filter(str.isdigit, string)))
+
+    def one_hot_encode(self):
+        # One-hot encode take
+        if self.id == 1:
+            if (self.part == 1 and self.style == 1) or (self.type == 'unscripted' and self.style == 1):
+                # ID 01, extroverted, scripted or unscripted
+                class_label = 1
+            elif (self.part == 1 and self.style == 2) or (self.type == 'unscripted' and self.style == 2):
+                # ID 01, introverted, scripted or unscripted
+                class_label = 2
+            elif (self.part == 1 and self.style == 3) or (self.type == 'unscripted' and self.style == 3):
+                # ID 01, neutral, scripted or unscripted
+                class_label = 3
+            elif self.part == 2 and self.style == 1:
+                class_label = 4
+            elif self.part == 2 and self.style == 2:
+                class_label = 5
+            elif self.part == 2 and self.style == 3:
+                class_label = 6
+        elif self.id == 2:
+            if (self.part == 1 and self.style == 1) or (self.type == 'unscripted' and self.style == 1):
+                # ID 01, extroverted, scripted or unscripted
+                class_label = 7
+            elif (self.part == 1 and self.style == 2) or (self.type == 'unscripted' and self.style == 2):
+                # ID 01, introverted, scripted or unscripted
+                class_label = 8
+            elif (self.part == 1 and self.style == 3) or (self.type == 'unscripted' and self.style == 3):
+                # ID 01, neutral, scripted or unscripted
+                class_label = 9
+            elif self.part == 2 and self.style == 1:
+                class_label = 10
+            elif self.part == 2 and self.style == 2:
+                class_label = 11
+            elif self.part == 2 and self.style == 3:
+                class_label = 12
+            else:
+                raise ValueError(f'Invalid part {self.part} and style {self.style} for take {self.name}')
+        else:
+            raise ValueError(f'Invalid id {self.id}')  
+        token = np.zeros(shape=(12))
+        token[class_label - 1] = 1
+        return token, class_label
         
         
