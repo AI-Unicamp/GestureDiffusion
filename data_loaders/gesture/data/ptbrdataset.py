@@ -5,8 +5,23 @@ import numpy as np
 import torch
 
 class PTBRGesture(data.Dataset):
-    def __init__(self, name, split, datapath='./dataset/PTBRGestures', step=10, window=120, fps=30, sr=22050, n_seed_poses=10, use_wavlm=False, use_vad=False, vadfromtext=False):
+    def __init__(self, 
+                 name, 
+                 split, 
+                 datapath='./dataset/PTBRGestures', 
+                 step=10, 
+                 window=120, 
+                 fps=30, 
+                 sr=22050, 
+                 n_seed_poses=10, 
+                 use_wavlm=False, 
+                 use_vad=False, 
+                 vadfromtext=False,
+                 bvhreference='./dataset/PTBRGestures/motion/bvh_twh/id01_p01_e01_f01.bvh'):
         
+        self.name = name
+        self.bvhreference = bvhreference
+
         # Hard-coded because it IS 30 fps
         self.fps = 30
 
@@ -35,25 +50,31 @@ class PTBRGesture(data.Dataset):
             line[0].bvh_start = line[1]
 
         # Hard-coded split
+        val_p01 = [ 0, 5, 10, 15, 20, 25, 30, 35, 40 ]
+        val_p02 = [ 0, 3, 6, 9, 12, 15, 27, 34, 41, 48, 55, 62, 69]
         if split == 'trn':
-            b, e1, e2 = 0, 40, 65
+            p01 = [i for i in np.arange(0, 45) if i not in val_p01]
+            p02 = [i for i in np.arange(0, 73) if i not in val_p02]
         elif split == 'val':
-            b, e1, e2 = 40, 45, 73
-
+            p01 = val_p01
+            p02 = val_p02
+        else:
+            raise ValueError('Invalid split')
+            
         # Categorize whole dataset (without unscripted samples)
         self.filtered = [
-        self.filter_style_part_id(1,1,1)[b:e1], # id01_p01_e01_fXX
-        self.filter_style_part_id(2,1,1)[b:e1], # id01_p01_e02_fXX
-        self.filter_style_part_id(3,1,1)[b:e1], # id01_p01_e03_fXX
-        self.filter_style_part_id(1,1,2)[b:e1], # id02_p01_e01_fXX
-        self.filter_style_part_id(2,1,2)[b:e1], # id02_p01_e02_fXX
-        self.filter_style_part_id(3,1,2)[b:e1], # id02_p01_e03_fXX
-        self.filter_style_part_id(1,2,1)[b:e2], # id01_p02_e01_fXX
-        self.filter_style_part_id(2,2,1)[b:e2], # id01_p02_e02_fXX
-        self.filter_style_part_id(3,2,1)[b:e2], # id01_p02_e03_fXX
-        self.filter_style_part_id(1,2,2)[b:e2], # id02_p02_e01_fXX
-        self.filter_style_part_id(2,2,2)[b:e2], # id02_p02_e02_fXX
-        self.filter_style_part_id(3,2,2)[b:e2], # id02_p02_e03_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(1,1,1)) if i in p01], # id01_p01_e01_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(2,1,1)) if i in p01], # id01_p01_e02_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(3,1,1)) if i in p01], # id01_p01_e03_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(1,1,2)) if i in p01], # id02_p01_e01_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(2,1,2)) if i in p01], # id02_p01_e02_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(3,1,2)) if i in p01], # id02_p01_e03_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(1,2,1)) if i in p02], # id01_p02_e01_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(2,2,1)) if i in p02], # id01_p02_e02_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(3,2,1)) if i in p02], # id01_p02_e03_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(1,2,2)) if i in p02], # id02_p02_e01_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(2,2,2)) if i in p02], # id02_p02_e02_fXX
+        [ take for i, take in enumerate(self.filter_style_part_id(3,2,2)) if i in p02], # id02_p02_e03_fXX
         ]
 
         # Get whole dataset given split
@@ -120,10 +141,10 @@ class PTBRGesture(data.Dataset):
         file_idx = np.searchsorted(self.samples_cumulative, index+1, side='left')
         # find sample's index in the file
         sample = index - self.samples_cumulative[file_idx-1] if file_idx > 0 else index
-        motion, seed_poses = self.__getmotion(file_idx, sample)
-        audio = self.__getaudio(file_idx, sample)
-        vad = self.__getvad(file_idx, sample)
-        wavlm = self.__getwavlm(file_idx, sample)
+        motion, seed_poses = self._getmotion(file_idx, sample)
+        audio = self._getaudio(file_idx, sample)
+        vad = self._getvad(file_idx, sample)
+        wavlm = self._getwavlm(file_idx, sample)
         return motion, seed_poses, audio, vad, wavlm, [self.takes[file_idx].name, file_idx, sample, self.takes[file_idx].one_hot]
 
     def __dummysample__(self):
@@ -135,13 +156,13 @@ class PTBRGesture(data.Dataset):
         wavlm = np.zeros(shape=(1, 768, 1, self.window))
         return motion, seed, audio, vad, wavlm, ['dummy', 0, 0, np.zeros(shape=(12))]
 
-    def __getaudio(self, file_idx, sample):
+    def _getaudio(self, file_idx, sample):
         # Get audio data from file_idx and sample
         b = int(sample*self.step/30*16000)
         e = int((sample*self.step+self.window)/30*16000)
         return self.audio16k[file_idx][b:e]
 
-    def __getvad(self, file_idx, sample):
+    def _getvad(self, file_idx, sample):
         # Get vad data from file_idx and sample
         vad_vals = self.vad[file_idx][sample*self.step:sample*self.step+self.window]
         assert vad_vals.shape[0] == self.window, f'VAD shape is {vad_vals.shape[0]} instead of {self.window}'
@@ -150,7 +171,7 @@ class PTBRGesture(data.Dataset):
         vad_vals = np.transpose(vad_vals, (1,0))                                            # [1, CHUNK_LEN]
         return vad_vals
 
-    def __getwavlm(self, file_idx, sample):
+    def _getwavlm(self, file_idx, sample):
         # Get wavlm data from file_idx and sample
         wavlm_reps = self.wavlm[file_idx][sample*self.step:sample*self.step+self.window]
         assert wavlm_reps.shape[0] == self.window, f'WAVLM shape is {wavlm_reps.shape[0]} instead of {self.window}'
@@ -161,7 +182,7 @@ class PTBRGesture(data.Dataset):
         return wavlm_reps
 
     
-    def __getmotion(self, file_idx, sample):
+    def _getmotion(self, file_idx, sample):
         # Get motion data from file_idx and sample
         motion = np.zeros(shape=(self.window, self.motio_feat_shape))
         b, e = sample*self.step, sample*self.step+self.window

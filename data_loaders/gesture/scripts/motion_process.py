@@ -23,11 +23,10 @@ def split_pos_rot(dataset, data):
     idx_positions, idx_rotations = get_indexes(dataset)
     return data[..., idx_positions], data[..., idx_rotations]
 
-def rot6d_to_euler(data):
+def rot6d_to_euler(data, n_joints):
     # Convert numpy array to euler angles
     # Shape expected [num_samples(bs), 1, chunk_len, 498]
     # Output shape [num_samples(bs) * chunk_len, n_joints, 3]
-    n_joints = 83
     assert data.shape[-1] == n_joints*6
     sample_rot = data.view(data.shape[:-1] + (-1, 6))                   # [num_samples(bs), 1, chunk_len, n_joints, 6]
     sample_rot = geometry.rotation_6d_to_matrix(sample_rot)                         # [num_samples(bs), 1, chunk_len, n_joints, 3, 3]
@@ -88,8 +87,9 @@ def np_matrix_to_rotation_6d(matrix: np.ndarray) -> np.ndarray:
     return matrix[..., :2, :].copy().reshape(6)
 
 def bvh2representations2(anim: bvhsdk.Animation):
-    # Converts bvh to two representations: 6d rotations and 3d positions 
-    # And 3d rotations (euler angles) and 3d positions
+    # Converts bvh to two representations: 
+    # 1st - 6d rotations and 3d positions 
+    # 2nd - And 3d rotations (euler angles) and 3d positions
     # The 3d positions of both representations are the same (duplicated data)
     # This representation is used in the genea challenge
     njoints = len(anim.getlistofjoints())
@@ -108,7 +108,10 @@ def bvh2representations2(anim: bvhsdk.Animation):
     return npyrot6dpos, npyrotpos
 
 def bvh2representations1(anim: bvhsdk.Animation):
-    # Converts bvh to three representations: 6d rotations, 3d positions (euler angles) and 3d positions
+    # Converts bvh to three representations: 
+    # 1st - 6d rotations
+    # 2nd - 3d rotations (euler angles) and
+    # 3rd - 3d positions
     njoints = len(anim.getlistofjoints())
     npyrot6d = np.empty(shape=(anim.frames, 6*njoints))
     npyrot = np.empty(shape=(anim.frames, 3*njoints))
