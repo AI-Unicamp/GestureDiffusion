@@ -24,6 +24,8 @@ __MACOSX/
 .vscode/
 speechbrain/pretrained*
 GENEA23*
+style_encoder/output*
+style_encoder/classifier_output/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
