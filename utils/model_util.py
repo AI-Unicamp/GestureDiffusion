@@ -36,7 +36,7 @@ def get_model_args(args, data):
             'dropout': 0.1, 'activation': "gelu", 'data_rep': data_rep, 'cond_mask_prob': args.cond_mask_prob, 
             'clip_version': clip_version, 'dataset': args.dataset,
             'use_text': args.use_text, 'mfcc_input': args.mfcc_input, 'use_wavlm': args.use_wavlm, 'use_vad':args.use_vad,
-            'use_wav_enc':args.use_wav_enc, 'seed_poses': args.seed_poses, 'use_style_enc': args.use_style_enc,} 
+            'use_wav_enc':args.use_wav_enc, 'seed_poses': args.seed_poses, 'use_style_enc': args.use_style_enc, 'dataloader': data,} 
 
 
 def create_gaussian_diffusion(args):

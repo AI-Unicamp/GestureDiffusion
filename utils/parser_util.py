@@ -114,7 +114,7 @@ def add_data_options(parser):
                        help="Use motion style indicator values.")
     group.add_argument("--vadfromtext", default=False, type=bool,
                        help="Get vad speech indicator values from text.")
-    group.add_argument("--bvh_reference_file", default='./dataset/Genea2023/trn/main-agent/bvh/trn_2023_v0_000_main-agent.bvh', type=str,
+    group.add_argument("--bvh_reference_file", default='', type=str,
                        help="BVH file reference. Used for extracting joint length and hierarchy during evaluation and generation.")
     group.add_argument("--fgd_embedding", default='./evaluation_metric/output/model_checkpoint_120.bin', type=str,
                        help="Embedding Space Evaluator network for computing FGD metric.")

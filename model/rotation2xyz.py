@@ -22,6 +22,30 @@ class Rotation2xyz:
         else:
             raise NotImplementedError
 
+        #def __call__(self, 
+        #        x,
+        #        mask,
+        #        pose_rep, 
+        ## translation, 
+        ## glob,
+        ## jointstype, 
+        ## vertstrans, 
+        ## betas=None, 
+        ## beta=0,
+        ## glob_rot=None, 
+        #        get_rotations_back=False, 
+        #        positions=None, # to get root translation
+        #        return_bvh=False,
+        ## **kwargs
+        #        ):
+        #
+        #    if self.dataname == 'ptbr':
+        #        if pose_rep != 'rot6d':
+        #                raise NotImplementedError
+        #
+        #        # rot6d to local euler angles
+        #        x = rot6d_to_euler(x, n_joints=83) # [batch size, n_joints, 3]
+
         #if mask is None:
         #    mask = torch.ones((x.shape[0], x.shape[-1]), dtype=bool, device=x.device)
 #

@@ -12,9 +12,7 @@ from utils.model_util import create_model_and_diffusion, load_model_wo_clip
 from utils import dist_util
 from model.cfg_sampler import ClassifierFreeSampleModel
 from data_loaders.get_data import get_dataset_loader
-from data_loaders.humanml.scripts.motion_process import recover_from_ric
-import data_loaders.humanml.utils.paramUtil as paramUtil
-from data_loaders.humanml.utils.plot_script import plot_3d_motion
+from data_loaders.gesture.scripts.motion_process import rot6d_to_euler
 import shutil
 from data_loaders.tensors import gg_collate, ptbr_collate
 from soundfile import write as wavwrite
@@ -31,8 +29,6 @@ def main():
     if args.dataset in ['ptbr']:
         fps = 30
         n_joints = 83
-        #TODO: change to receive args.bvh_reference_file
-        bvhreference = bvhsdk.ReadFile('./dataset/PTBRGestures/motion/bvh_twh/id01_p01_e01_f01.bvh', skipmotion=True)
         collate_fn = ptbr_collate
         split = 'val'
         # iterate over samples in a take
@@ -64,7 +60,7 @@ def main():
     model.eval()  # disable random masking
     all_motions, all_motions_rot, _ = sample(args, model, diffusion, data, collate_fn, n_joints)
     all_motions, all_motions_rot = interpolate(args, all_motions, all_motions_rot, max_chunks_in_take=np.max(data.dataset.samples_per_file))
-    savebvh(data, all_motions, all_motions_rot, out_path, fps, bvhreference)
+    savebvh(data, all_motions, all_motions_rot, out_path, fps, data.dataset.bvhreference)
 
     
 def sample(args, model, diffusion, data, collate_fn, n_joints):
@@ -138,17 +134,14 @@ def sample(args, model, diffusion, data, collate_fn, n_joints):
                 sample, sample_rot = sample[..., idx_positions], sample[..., idx_rotations] # sample_rot: [num_samples(bs), 1, chunk_len, n_joints*6]
                 
                 #rotations
-                sample_rot = sample_rot.view(sample_rot.shape[:-1] + (-1, 6)) # [num_samples(bs), 1, chunk_len, n_joints, 6]
-                sample_rot = geometry.rotation_6d_to_matrix(sample_rot) # [num_samples(bs), 1, chunk_len, n_joints, 3, 3]
-                sample_rot = geometry.matrix_to_euler_angles(sample_rot, "ZXY")[..., [1, 2, 0] ]*180/np.pi # [num_samples(bs), 1, chunk_len, n_joints, 3]
-                sample_rot = sample_rot.view(-1, *sample_rot.shape[2:]).permute(0, 2, 3, 1) # [num_samples(bs)*chunk_len, n_joints, 3]
+                sample_rot = rot6d_to_euler(sample_rot, n_joints) # [num_samples(bs)*chunk_len, n_joints, 3]
 
             else:
                 raise ValueError(f'Unknown dataset: {args.dataset}')
 
             #positions
-            sample = sample.view(sample.shape[:-1] + (-1, 3))                           # [num_samples(bs), 1, chunk_len, n_joints/3, 3]
-            sample = sample.view(-1, *sample.shape[2:]).permute(0, 2, 3, 1)             # [num_samples(bs), n_joints/3, 3, chunk_len]
+            sample = sample.view(sample.shape[:-1] + (-1, 3))                           # [num_samples(bs), 1, chunk_len, n_joints, 3]
+            sample = sample.view(-1, *sample.shape[2:]).permute(0, 2, 3, 1)             # [num_samples(bs), n_joints, 3, chunk_len]
 
             #rot2xyz_pose_rep = 'xyz'
             #rot2xyz_mask = None if rot2xyz_pose_rep == 'xyz' else model_kwargs['y']['mask'].reshape(args.batch_size, n_frames).bool()
@@ -196,7 +189,7 @@ def interpolate(args, all_motions, all_motions_rot, max_chunks_in_take):
     
     return all_motions, all_motions_rot
 
-def savebvh(data, all_motions, all_motions_rot, out_path, fps, bvhreference):
+def savebvh(data, all_motions, all_motions_rot, out_path, fps, bvhreference_path):
 
     if os.path.exists(out_path):
         shutil.rmtree(out_path)
@@ -223,6 +216,7 @@ def savebvh(data, all_motions, all_motions_rot, out_path, fps, bvhreference):
     #sample_print_template, row_print_template, all_print_template, \
     #sample_file_template, row_file_template, all_file_template = construct_template_variables()
 
+    bvhreference = bvhsdk.ReadFile(bvhreference_path, skipmotion=True)
 
     for i, take in enumerate(range(len(data.dataset.samples_per_file))):
         final_frame = data.dataset.frames[i]
