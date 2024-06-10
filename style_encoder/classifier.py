@@ -151,7 +151,7 @@ def train(path, run_name, network, trnloader, valloader, device, epochs, optimiz
     return trnlog, vallog
 
 
-def run_epoch(network, loader, device, criterion, optimizer=None):
+def run_epoch(network, loader, device, criterion, optimizer=None, scheduler=None):
     epoch_loss, correct, total = 0.0, 0, 0
     mode = "Training" if optimizer else "Validation"
     with tqdm(loader, desc=f"{mode} Epoch") as pbar:
@@ -173,10 +173,12 @@ def run_epoch(network, loader, device, criterion, optimizer=None):
                 loss.backward()
                 optimizer.step()
 
+
             epoch_loss += loss.item()
 
             pbar.set_postfix({'Loss': epoch_loss / (i + 1)})
-
+    if scheduler:
+        scheduler.step()
     return epoch_loss / len(loader), correct / total
 
 def run_samples(network, loader, device):
@@ -196,18 +198,49 @@ def run_samples(network, loader, device):
         embeddings = np.array(embeddings)
         original_labels = np.array(original_labels)
         return embeddings, original_labels, samples
+    
+def run_samples2(network, loader, device):
+    """
+    Similar to run_epoch but here we want to get the embeddings for all samples.
+    Adapted to work for the FGD network
+    """
+    network.eval()
+    with torch.no_grad():
+        embeddings, original_labels, samples = [], [], []
+        for j, data in enumerate(loader):
+            inputs, labels, name = data
+            inputs = inputs.to(device).float()
+            labels = labels.to(device).long()
+            f, _ = network(inputs)
+            embeddings.extend(f.data.cpu().numpy())
+            original_labels.extend(labels.detach().cpu().numpy())
+            samples.extend(name)
+        embeddings = np.array(embeddings)
+        original_labels = np.array(original_labels)
+        return embeddings, original_labels, samples
 
-def run_PCA(embeddings, labels, n_components, samples_names, x_comp=1, y_comp=2):
+def run_PCA(embbedings, 
+            labels,
+            n_components, 
+            samples_names, 
+            x_comp=1, 
+            y_comp=2,
+            print_extremes=True,
+            xlim=None,
+            ylim=None,
+            title=None):
     """
     x_comp: PCA component to be plotted in the x-axis
     y_comp: PCA component to be plotted in the y-axis
     """
     assert x_comp > 0 and x_comp <= n_components and x_comp != y_comp and y_comp > 0 and y_comp <= n_components
     assert n_components >= 2
-    pca = PCA(n_components=n_components, random_state=2).fit_transform(embeddings)
+    
+    pca = PCA(n_components=n_components, random_state=2).fit_transform(embbedings)
+    
     x_comp -= 1
     y_comp -= 1
-    
+
     pca = pca[..., [x_comp, y_comp]]
     
     class_names = ['01extro', '01intro', '01neutral', 
@@ -227,20 +260,20 @@ def run_PCA(embeddings, labels, n_components, samples_names, x_comp=1, y_comp=2)
     xmax = np.argmax(pca[:,0])
     ymax = np.argmax(pca[:,1])
     
-    print('-X sample: {} [{},{}] '.format(samples_names[xmin], pca[xmin,0],pca[xmin,1]))
-    print('X sample: {} [{},{}] '.format(samples_names[xmax], pca[xmax,0],pca[xmax,1]))
-    print('-Y sample: {} [{},{}] '.format(samples_names[ymin], pca[ymin,0],pca[ymin,1]))
-    print('Y sample: {} [{},{}] '.format(samples_names[ymax], pca[ymax,0],pca[ymax,1]))
+    if print_extremes:
+        print('-X sample: {} [{},{}] '.format(samples_names[xmin], pca[xmin,0],pca[xmin,1]))
+        print('X sample: {} [{},{}] '.format(samples_names[xmax], pca[xmax,0],pca[xmax,1]))
+        print('-Y sample: {} [{},{}] '.format(samples_names[ymin], pca[ymin,0],pca[ymin,1]))
+        print('Y sample: {} [{},{}] '.format(samples_names[ymax], pca[ymax,0],pca[ymax,1]))
     
     for i in range(12):
         x = pca[labels==i, 0]
         y = pca[labels==i, 1]
         marker = "s" if "01" in class_names[i] else "o"
-        edgecolors = 'black' if "01" in class_names[i] else None
-        scatter = ax.scatter(x, y, c=class_labels[i], label=class_names[i], alpha=1, s=20, marker=marker, edgecolors=edgecolors)
-
-    #scatter = ax.scatter(pca[:, 0], pca[:, 1], c=[class_labels[color] for color in labels], label=[class_names[i] for i in labels], alpha=0.5)
+        scatter = ax.scatter(x, y, c=class_labels[i], label=class_names[i], alpha=0.5, s=20, marker=marker)
         
+    #scatter = ax.scatter(pca[:, 0], pca[:, 1], c=[class_labels[color] for color in labels], label=[class_names[i] for i in labels], alpha=0.5)
+
     cms = np.zeros(shape = (12, 2) )
     nums = np.zeros(12)
     for xy, label in zip(pca,labels):
@@ -252,14 +285,41 @@ def run_PCA(embeddings, labels, n_components, samples_names, x_comp=1, y_comp=2)
         #scatter = plt.scatter(cms[i,0], cms[i,1], c = class_labels[i], marker='^', s=100)
         scatter = plt.scatter(cms[i,0], cms[i,1], c ='black', marker='*', s=100)
         _ = plt.text(cms[i,0], cms[i,1], s=class_names[i])
-        
+    
+    if xlim:
+        ax.set_xlim(xmin=xlim[0], xmax=xlim[1])
+    if ylim:
+        ax.set_ylim(ymin=ylim[0], ymax=ylim[1])
+    
+    if title:
+        ax.set_title(title)
+
     ax.set_xlabel("{} PCA Component".format(x_comp+1))
     ax.set_ylabel("{} PCA Component".format(y_comp+1))
-    ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.05),
-          ncol=4, fancybox=True, shadow=True, prop={'size': 10})
+    ax.legend(loc='upper center', bbox_to_anchor = (0.5,1.2), ncol=6, fancybox=True, shadow = True, prop={'size':12})
+
     #plt.savefig(fname = outpath+str(epoch))
     #plt.show()
-    return fig
+    return fig, pca
+
+def run_KNN(embbedings, labels, tst_emb, tst_labels, neighbors=12):
+    knn = KNN(n_neighbors=neighbors).fit(embbedings, labels)
+    labs = knn.predict(tst_emb)
+    return confusion_matrix(tst_labels, labs), labs
+
+def nonn_samples(loader):
+    # Prepare samples without any network
+    embbedings = []
+    labels_ = []
+    names = []
+    for j, data in enumerate(loader):
+        inputs, labels, name = data
+        embbedings.append(inputs)
+        labels_.append(int(labels))
+        names.append(name)
+    embbedings = np.array(embbedings)
+    labels_ = np.array(labels_)
+    return embbedings, labels_, names
 
 if __name__ == "__main__":
     main()

@@ -26,6 +26,7 @@ speechbrain/pretrained*
 GENEA23*
 style_encoder/output*
 style_encoder/classifier_output/*
+gesture_space/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
