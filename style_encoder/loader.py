@@ -130,6 +130,10 @@ class DatasetBVHLoader():
         
     def __len__(self):
         return self.length
+    
+    def posLckHips(self):
+        """Locks the root position to the origin"""
+        return [pos-np.tile(pos[:,0,:][:, np.newaxis], (1,83,1)) for pos in self.pos]
 
     def __data2samples(self, **kwargs):
         # Converts all files (takes) to samples
