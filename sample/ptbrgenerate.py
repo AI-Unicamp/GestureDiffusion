@@ -66,6 +66,7 @@ def main():
 def sample(args, model, diffusion, data, collate_fn, n_joints):
     
     total_batches = int(np.round(len(data.dataset.samples_per_file)/args.batch_size))
+    assert total_batches >= int(np.round(len(data.dataset.samples_per_file)/args.batch_size))
     max_chunks_in_take = np.max(data.dataset.samples_per_file)
 
     all_motions = np.zeros(shape=(total_batches*args.batch_size, n_joints, 3, args.num_frames*max_chunks_in_take))
@@ -244,7 +245,8 @@ def savebvh(data, all_motions, all_motions_rot, out_path, fps, bvhreference_path
             joint.rotation = rotations[:, j, :]
             joint.translation = np.tile(joint.offset, (bvhreference.frames, 1))
         bvhreference.root.translation = positions[:, 0, :]
-        #bvhreference.root.children[0].translation = positions[:, 1, :]
+        bvhreference.root.children[0].translation[:, 1] = positions[:, 1, 1]
+
         print('Saving bvh file...')
         bvhsdk.WriteBVH(bvhreference, path=animation_save_path, name=None, frametime=1/fps, refTPose=False)
 
