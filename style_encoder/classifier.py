@@ -222,13 +222,14 @@ def run_samples2(network, loader, device):
 def run_PCA(embbedings, 
             labels,
             n_components, 
-            samples_names, 
+            samples_names,
+            pca,
             x_comp=1, 
             y_comp=2,
             print_extremes=True,
             xlim=None,
             ylim=None,
-            title=None):
+            title=None,):
     """
     x_comp: PCA component to be plotted in the x-axis
     y_comp: PCA component to be plotted in the y-axis
@@ -236,12 +237,16 @@ def run_PCA(embbedings,
     assert x_comp > 0 and x_comp <= n_components and x_comp != y_comp and y_comp > 0 and y_comp <= n_components
     assert n_components >= 2
     
-    pca = PCA(n_components=n_components, random_state=2).fit_transform(embbedings)
+    if pca: # If we have a pca object, we use it to transform the data
+        components = pca.transform(embbedings)
+    else: # Otherwise we train a new pca
+        pca = PCA(n_components=n_components, random_state=2)
+        components = pca.fit_transform(embbedings)
     
     x_comp -= 1
     y_comp -= 1
 
-    pca = pca[..., [x_comp, y_comp]]
+    components = components[..., [x_comp, y_comp]]
     
     class_names = ['01extro', '01intro', '01neutral', 
                    '01jov', '01welc', '01formal', 
@@ -255,20 +260,20 @@ def run_PCA(embbedings,
     fig = plt.figure(figsize=(12,8))
     ax = plt.gca()
     
-    xmin = np.argmin(pca[:,0])
-    ymin = np.argmin(pca[:,1])
-    xmax = np.argmax(pca[:,0])
-    ymax = np.argmax(pca[:,1])
+    xmin = np.argmin(components[:,0])
+    ymin = np.argmin(components[:,1])
+    xmax = np.argmax(components[:,0])
+    ymax = np.argmax(components[:,1])
     
     if print_extremes:
-        print('-X sample: {} [{},{}] '.format(samples_names[xmin], pca[xmin,0],pca[xmin,1]))
-        print('X sample: {} [{},{}] '.format(samples_names[xmax], pca[xmax,0],pca[xmax,1]))
-        print('-Y sample: {} [{},{}] '.format(samples_names[ymin], pca[ymin,0],pca[ymin,1]))
-        print('Y sample: {} [{},{}] '.format(samples_names[ymax], pca[ymax,0],pca[ymax,1]))
+        print('-X sample: {} [{},{}] '.format(samples_names[xmin], components[xmin,0],components[xmin,1]))
+        print('X sample: {} [{},{}] '.format(samples_names[xmax], components[xmax,0],components[xmax,1]))
+        print('-Y sample: {} [{},{}] '.format(samples_names[ymin], components[ymin,0],components[ymin,1]))
+        print('Y sample: {} [{},{}] '.format(samples_names[ymax], components[ymax,0],components[ymax,1]))
     
     for i in range(12):
-        x = pca[labels==i, 0]
-        y = pca[labels==i, 1]
+        x = components[labels==i, 0]
+        y = components[labels==i, 1]
         marker = "s" if "01" in class_names[i] else "o"
         scatter = ax.scatter(x, y, c=class_labels[i], label=class_names[i], alpha=0.5, s=20, marker=marker)
         
@@ -276,7 +281,7 @@ def run_PCA(embbedings,
 
     cms = np.zeros(shape = (12, 2) )
     nums = np.zeros(12)
-    for xy, label in zip(pca,labels):
+    for xy, label in zip(components,labels):
         cms[label,:] += xy
         nums[label] += 1
     cms = np.array([cm/num for cm, num in zip(cms,nums)])
@@ -300,7 +305,7 @@ def run_PCA(embbedings,
 
     #plt.savefig(fname = outpath+str(epoch))
     #plt.show()
-    return fig, pca
+    return fig, components, pca, [ax.get_xlim(), ax.get_ylim()]
 
 def run_KNN(embbedings, labels, tst_emb, tst_labels, neighbors=12):
     knn = KNN(n_neighbors=neighbors).fit(embbedings, labels)
