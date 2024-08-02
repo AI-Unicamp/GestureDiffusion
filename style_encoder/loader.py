@@ -49,7 +49,7 @@ class DatasetBVHLoader():
                  pos_std = 'dataset/PTBRGestures/pos_Std.npy',
                  rot3d_mean = 'dataset/PTBRGestures/rot3d_Mean.npy',
                  rot3d_std = 'dataset/PTBRGestures/rot3d_Std.npy',
-                 skiptjoints = 1,
+                 skipjoints = 1,
                  metadata = False,
                  metadata_path = 'dataset/PTBRGestures/meta.csv',
                  **kwargs) -> None:
@@ -59,7 +59,7 @@ class DatasetBVHLoader():
         self.fps = fps
         self.name = name
         self.path = path
-        self.skiptjoints = skiptjoints
+        self.skipjoints = skipjoints
         self.data_rep = data_rep
         self.pos_mean = np.load(pos_mean)
         self.pos_std = np.load(pos_std)
@@ -76,6 +76,9 @@ class DatasetBVHLoader():
         # Get parents vector (skeleton hierarchy)
         aux = bvhsdk.ReadFile(os.path.join(self.path,self.files[0]))
         self.parents = aux.arrayParent()
+
+        #Hard-coded sorry
+        self.parents_arms_only = np.array([-1,  0, 28, 29, 30, 31, 32, 33, 34, 35, 33, 37, 38, 33, 40, 41, 33, 43, 44, 33, 46, 47, 48, 52, 53, 54, 55, 56, 57, 58, 59, 60, 57, 62, 63, 57, 65, 66, 57, 68, 69, 57, 71, 72])
 
         # If load = True, loads already processed data
         if kwargs.pop('load', False):
@@ -117,9 +120,9 @@ class DatasetBVHLoader():
         sample = index - self.samples_cumulative[file_idx-1] if file_idx > 0 else index
         b, e = sample*self.step, sample*self.step+self.window
         if self.data_rep == 'pos':
-            sample = self.norma(self.pos[file_idx][b:e, self.skipjoint:, :].reshape(-1, (83-self.skipjoint)*3), self.pos_mean[3*self.skipjoint:], self.pos_std[3*self.skipjoint:])
+            sample = self.norma(self.pos[file_idx][b:e, self.skipjoints:, :].reshape(-1, (83-self.skipjoints)*3), self.pos_mean[3*self.skipjoints:], self.pos_std[3*self.skipjoints:])
         elif self.data_rep == 'rot3d':
-            sample = self.norma(self.rot3d[file_idx][b:e, self.skipjoint:, :].reshape(-1, (83-self.skipjoint)*3), self.rot3d_mean[3*self.skipjoint:], self.rot3d_std[3*self.skipjoint:])
+            sample = self.norma(self.rot3d[file_idx][b:e, self.skipjoints:, :].reshape(-1, (83-self.skipjoints)*3), self.rot3d_mean[3*self.skipjoints:], self.rot3d_std[3*self.skipjoints:])
         return sample, self.labels[file_idx], self.files[file_idx] + f"_{b}_{e}"
         
     def norma(self, arr_, mean, std):
