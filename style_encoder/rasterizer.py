@@ -14,9 +14,9 @@ class Grid:
 
 def bresenham_line(x0, y0, x1, y1, 
                    grid,
-                   grange,
                    gstep,
-                   weigth=1):
+                   weigth=1,
+                   func=None):
     grid_size = len(grid)
     
     x0 = int(np.rint(x0 * 1/gstep))
@@ -37,7 +37,7 @@ def bresenham_line(x0, y0, x1, y1,
     
     while True:
         # Mark the current grid cell as filled
-        grid[grid_size - 1 - y0][x0] += weigth 
+        grid[grid_size - 1 - y0][x0] = grid[grid_size - 1 - y0][x0] + weigth if not func else func(grid[grid_size - 1 - y0][x0], weigth)
                       
         if x0 == x1 and y0 == y1:
             break
@@ -53,23 +53,24 @@ def bresenham_line(x0, y0, x1, y1,
     return grid
 
 def add_to_grid(grid,
-                grange,
                 gstep,
                 positions,
                 parents,
                 xaxis=0, 
                 yaxis=1, 
-                weigth=1):
-    for i in range(2,len(parents)):
+                weigth=1,
+                skipfirstjoints=2,
+                func=None):
+    for i in range(skipfirstjoints,len(parents),1):
         grid = bresenham_line(
                                 positions[parents[i]][xaxis] + 100,
                                 positions[parents[i]][yaxis],
                                 positions[i][xaxis] + 100,
                                 positions[i][yaxis],
                                 grid=grid,
-                                grange=grange,
                                 gstep=gstep,
                                 weigth=weigth,
+                                func=func,
         )
     return grid
 
@@ -80,15 +81,19 @@ def rasterize(positions,
               weigth=0.1, 
               frame_skip=5,
               grid_range=200,
-              grid_step=0.5):
+              grid_step=0.5,
+              skipfirstjoints=2,
+              func=None):
     grid = Grid(grange=grid_range, gstep=grid_step)
     for i in range(0, positions.shape[0], frame_skip):
+        w = weigth[i] if type(weigth) == np.ndarray or type(weigth) == list else weigth
         grid.grid = add_to_grid(grid.grid,
-                                grid.grange,
                                 grid.gstep,
                                 positions[i],
                                 parents,
                                 xaxis=xaxis, 
                                 yaxis=yaxis, 
-                                weigth=weigth)
+                                weigth=w,
+                                skipfirstjoints=skipfirstjoints,
+                                func=func)
     return grid
